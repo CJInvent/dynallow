@@ -1,0 +1,14 @@
+# Runtime state — never commit: database, encryption key, sessions
+ControlServer/data/
+*.sqlite
+*.sqlite-*
+secret.key
+*.ipfbak
+# Provisioning profiles and generated installers are one-time credentials
+ipfailover-agt_*.json
+ipfailover-agt_*.sh
+Install-ipfailover-agt_*.ps1
+provisioning.json
+# Tooling
+__pycache__/
+*.pyc

@@ -1,0 +1,28 @@
+# IP Failover agent. Stock image, no build step; the agent is one PHP file.
+services:
+  ipfailover-agent:
+    image: php:8.3-cli-alpine
+    container_name: ipfailover-agent
+    restart: unless-stopped
+    command: ["php", "/app/agent.php"]
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - ./agent.php:/app/agent.php:ro
+      - ./data:/data
+      # Lets the server notice if this identity is copied to other hardware.
+      - /etc/machine-id:/host-machine-id:ro
+    user: "65534:65534"          # nobody; the agent needs no privileges at all
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: ["CMD", "php", "/app/agent.php", "health"]
+      interval: 60s
+      timeout: 20s
+      start_period: 90s
+      retries: 2
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
