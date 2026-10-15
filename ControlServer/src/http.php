@@ -7,9 +7,11 @@ declare(strict_types=1);
  */
 function http_request(string $method, string $url, array $headers = [], ?string $body = null, int $timeout = 12): array
 {
+    if (!preg_match('#^https?://#i', $url) || preg_match('/[\r\n]/', $url)) return ['status' => 0, 'body' => '', 'error' => 'Invalid HTTP URL'];
     $hdr = [];
     $hasUa = false;
     foreach ($headers as $k => $v) {
+        if (!preg_match('/^[A-Za-z0-9-]+$/D', (string)$k) || preg_match('/[\r\n]/', (string)$v)) return ['status' => 0, 'body' => '', 'error' => 'Invalid HTTP header'];
         $hdr[] = "$k: $v";
         if (strcasecmp((string)$k, 'User-Agent') === 0) {
             $hasUa = true;
@@ -44,7 +46,7 @@ function http_request(string $method, string $url, array $headers = [], ?string 
         return true;
     });
     try {
-        $resp = file_get_contents($url, false, stream_context_create($opts));
+        $resp = file_get_contents($url, false, stream_context_create($opts), 0, 2097153);
     } finally {
         restore_error_handler();
     }
@@ -57,6 +59,7 @@ function http_request(string $method, string $url, array $headers = [], ?string 
             $status = (int)$m[1]; // last one wins (after any 1xx)
         }
     }
+    if ($resp !== false && strlen($resp) > 2097152) return ['status' => $status, 'body' => '', 'error' => 'HTTP response exceeds 2 MiB limit'];
     if ($resp === false) {
         return ['status' => $status, 'body' => '', 'error' => $errMsg ?: 'request failed'];
     }

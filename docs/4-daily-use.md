@@ -25,7 +25,7 @@ Click a site to see everything about it.
 | **APPROVAL NEEDED** | A site in Manual mode wants to change IP. Approve it on the site page. |
 | **Forged request** | Someone tried to pretend to be this site. It was refused. |
 | **Agent key moved to another machine** | The site's key files were copied to other hardware. |
-| **Weak key storage** | That machine has no TPM and no DPAPI. |
+| **Weak key storage** | The reported protector is below policy; inspect the agent details. |
 
 ## Common jobs
 
@@ -34,7 +34,7 @@ Click a site to see everything about it.
 - **Change how often it checks in:** site page → Settings → **Check in**. Takes effect at its next check-in.
 - **Switch DNS provider:** site page → DNS → **Add a DNS name** with the new account → update whatever uses the old name → **Remove** the old one.
 - **Pause a site:** **Disable**. No DNS changes, no alerts, removed from allowlist feeds.
-- **Remove a site properly:** **Decommission** (the agent deletes its key and removes itself at its next check-in), then **Delete site**.
+- **Remove a site properly:** **Decommission** (the agent deletes its identity and stops operation at its next check-in; uninstall the service/container locally), then **Delete site**.
 - **Clean up old sites:** dashboard → **Stale** tile → **Delete all stale**. Tick "also delete their DNS records" to remove Cloudflare/PowerDNS names too.
 - **Move a site to new hardware:** site page → **Re-provision…** → download a new installer → run it on the new machine.
 
@@ -43,3 +43,7 @@ Click a site to see everything about it.
 - **Admin:** everything.
 - **Technician:** create sites, download installers, edit and push sites. Can't delete, decommission, or see settings/DNS accounts/users.
 - Turn on **Settings → Security → Require two-factor sign-in for everyone**.
+
+## Diagnostics and releases
+
+Use **Logs** for agent/server diagnostics and unacknowledged warnings/errors. Admins acknowledge issues after review. Use **Releases** for offline-signed bundle upload and canary/fleet rollout. The per-site automatic-sleep prevention policy defaults off. See the [deployment guide](8-native-agents-and-releases.md) for retention, external monitoring, and update recovery.

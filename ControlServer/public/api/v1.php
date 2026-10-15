@@ -6,8 +6,7 @@ declare(strict_types=1);
  * envelope (see src/wire.php) and everything we say back leaves inside one.
  *
  * Note what is NOT here: no Authorization header. Identity is the agent's
- * signature inside the envelope, so the Apache/proxy header-stripping trap
- * that took Nimbus agents offline cannot happen on this endpoint.
+ * signature inside the envelope, independent of Authorization header forwarding.
  */
 
 require dirname(__DIR__, 2) . '/src/bootstrap.php';
@@ -34,7 +33,7 @@ try {
     echo json_encode(['error' => $e->codeStr, 'message' => $e->getMessage()]);
     exit;
 } catch (Throwable $e) {
-    error_log('[ipfailover] envelope: ' . $e->getMessage());
+    server_diagnostic('error', 'Envelope failure: ' . get_class($e) . ': ' . $e->getMessage());
     http_response_code(500);
     echo json_encode(['error' => 'server_error']);
     exit;
@@ -45,7 +44,8 @@ try {
 } catch (WireError $e) {
     $resp = ['ok' => false, 'error' => $e->codeStr, 'message' => $e->getMessage()];
 } catch (Throwable $e) {
-    error_log('[ipfailover] api: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+    if (db()->inTransaction()) db()->rollBack();
+    server_diagnostic('error', 'API failure: ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
     $resp = ['ok' => false, 'error' => 'server_error', 'message' => 'internal server error (see server log)'];
 }
 echo ipf_seal_response($ctx, $resp);

@@ -11,13 +11,14 @@ declare(strict_types=1);
 /** @return array{ok: bool, error: ?string} */
 function send_mail(array $to, string $subject, string $body): array
 {
-    $to = array_values(array_unique(array_filter($to)));
+    $to = array_values(array_unique(array_filter($to, fn($e) => is_string($e) && filter_var($e, FILTER_VALIDATE_EMAIL))));
     if (!$to) {
         return ['ok' => false, 'error' => 'no recipients'];
     }
     $from = setting('smtp_from');
     $fromName = setting('smtp_from_name') ?: 'IP Failover';
     $host = setting('smtp_host');
+    if ($from !== '' && !filter_var($from, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'Invalid SMTP from address'];
 
     if ($host === '') {
         if ($from === '') {
@@ -49,6 +50,8 @@ function mail_encode_header(string $s): string
 function smtp_send(string $host, int $port, string $security, string $user, string $pass,
                    string $from, string $fromName, array $to, string $subject, string $body): void
 {
+    if (!filter_var($from, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Invalid SMTP from address');
+    foreach ($to as $address) if (!filter_var($address, FILTER_VALIDATE_EMAIL)) throw new RuntimeException('Invalid SMTP recipient');
     $ctx = stream_context_create(['ssl' => ['verify_peer' => true, 'verify_peer_name' => true, 'peer_name' => $host]]);
     $remote = ($security === 'ssl' ? 'ssl://' : 'tcp://') . $host . ':' . $port;
     $fp = @stream_socket_client($remote, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $ctx);
@@ -98,7 +101,7 @@ function smtp_send(string $host, int $port, string $security, string $user, stri
         }
 
         if ($user !== '') {
-            if ($security === 'none' && !preg_match('/^(localhost|127\.|::1)/', $host)) {
+            if ($security === 'none' && !(strtolower($host) === 'localhost' || $host === '::1' || (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) && ip_in_cidr($host, '127.0.0.0/8')))) {
                 throw new RuntimeException('Refusing to send SMTP password over an unencrypted connection; use STARTTLS or SSL');
             }
             $cmd('AUTH LOGIN', [334]);

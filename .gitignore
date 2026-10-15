@@ -12,3 +12,13 @@ provisioning.json
 # Tooling
 __pycache__/
 *.pyc
+
+# Native agent build outputs and offline signing secrets
+**/obj/
+**/bin/Debug/
+**/bin/Release/
+artifacts/
+*.pdb
+release-private*.pem
+*.encrypted.pem
+ControlServer/release-public.pem

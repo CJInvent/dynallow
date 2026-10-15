@@ -13,7 +13,7 @@ if (PHP_VERSION_ID < 80100) {
 }
 
 define('APP_ROOT', dirname(__DIR__));
-define('APP_VERSION', '2.0.0');
+define('APP_VERSION', '3.0.0');
 
 function app_config(string $key)
 {
@@ -33,6 +33,9 @@ require __DIR__ . '/providers.php';
 require __DIR__ . '/agents.php';
 require __DIR__ . '/auth.php';
 require __DIR__ . '/views.php';
+require __DIR__ . '/diagnostics.php';
+require __DIR__ . '/releases.php';
+install_diagnostic_handlers();
 
 // ---------------------------------------------------------------------------
 // Small shared helpers
@@ -89,6 +92,9 @@ function log_event(string $message, string $level = 'info', ?array $agent = null
     if ($actor === null) {
         $actor = function_exists('current_user') && current_user() ? current_user()['username'] : 'system';
     }
+    $message = diagnostic_redact($message);
+    if (in_array($level, ['warn', 'error'], true)) server_diagnostic($level, ($agent ? $agent['name'] . ': ' : '') . $message);
+    if (app_config('audit_syslog')) error_log('[dynallow-audit] ' . json_encode(['at' => time(), 'actor' => $actor, 'agent' => $agent['uid'] ?? null, 'level' => $level, 'message' => $message]));
     db_exec(
         'INSERT INTO events(at, agent_id, agent_name, actor, level, message) VALUES(?,?,?,?,?,?)',
         [time(), $agent['id'] ?? null, $agent['name'] ?? null, $actor, $level, $message]
@@ -154,6 +160,7 @@ function ip_in_cidr(string $ip, string $cidr): bool
     if ($ipBin === false || $netBin === false || strlen($ipBin) !== strlen($netBin)) {
         return false;
     }
+    if (!preg_match('/^[0-9]+$/D', $bits) || (int)$bits > strlen($ipBin) * 8) return false;
     $bits = (int)$bits;
     $bytes = intdiv($bits, 8);
     if (substr($ipBin, 0, $bytes) !== substr($netBin, 0, $bytes)) {

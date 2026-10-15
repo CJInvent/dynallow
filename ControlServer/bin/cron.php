@@ -77,7 +77,7 @@ foreach ($rows as $t) {
 // ---- 4. DNS drift ---------------------------------------------------------------
 $every = max(5, (int)setting('verify_minutes')) * 60;
 $rows = db_all("SELECT t.* FROM dns_targets t JOIN agents a ON a.id = t.agent_id
-                WHERE t.enabled = 1 AND t.state = 'ok' AND a.enabled = 1 AND a.current_ipv4 IS NOT NULL
+                WHERE t.enabled = 1 AND t.state = 'ok' AND a.enabled = 1 AND a.decommission = 0 AND a.current_ipv4 IS NOT NULL
                   AND COALESCE(t.last_verified_at, 0) < ? ORDER BY t.last_verified_at LIMIT 50", [$now - $every]);
 foreach ($rows as $t) {
     $agent = agent_get((int)$t['agent_id']);
@@ -104,6 +104,7 @@ foreach ($rows as $t) {
 }
 
 // ---- 5. housekeeping ------------------------------------------------------------
+db_exec('DELETE FROM diagnostics WHERE at < ?', [$now - max(7, (int)setting('event_retention_days')) * 86400]);
 db_exec('DELETE FROM events WHERE at < ?', [$now - max(7, (int)setting('event_retention_days')) * 86400]);
 db_exec('DELETE FROM seen_nonces WHERE at < ?', [$now - 2 * max(60, (int)setting('clock_skew_sec')) - 60]);
 db_exec('DELETE FROM login_attempts WHERE at < ?', [$now - 86400]);

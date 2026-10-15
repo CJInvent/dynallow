@@ -5,7 +5,7 @@ declare(strict_types=1);
  * Agent lifecycle: provisioning profiles, enrollment, check-in, the
  * authoritative-IP decision, key rotation, and server-side DNS sync.
  *
- * INVARIANT (carried over from Nimbus V4-FIRST-ENROLLMENT): a state reachable
+ * INVARIANT: a state reachable
  * by doing nothing wrong — provisioned, waiting to install, just enrolled,
  * waiting for the first push — is never shown as an error.
  */
@@ -67,13 +67,6 @@ function agent_issue_profile(array $agent, string $issuedBy, int $validDays): ar
     ];
 }
 
-function agent_profile_filename(array $agent): string
-{
-    // Named by the opaque uid, not the customer: the file is a credential and
-    // its name lands in Downloads folders, email attachments and USB sticks.
-    return 'ipfailover-' . $agent['uid'] . '.json';
-}
-
 // ---------------------------------------------------------------------------
 // Request dispatch (called by public/api/v1.php after the envelope opened)
 // ---------------------------------------------------------------------------
@@ -85,6 +78,7 @@ function api_dispatch(array $plain, array $ctx): array
         case 'enroll':  $resp = api_enroll($plain, $ctx); break;
         case 'checkin': $resp = api_checkin($plain, $ctx); break;
         case 'rotate':  $resp = api_rotate($plain, $ctx); break;
+        case 'decommission_ack': $resp = api_decommission_ack($plain, $ctx); break;
         default: throw new WireError('bad_request', 'unknown request type');
     }
     // Pinned to a retired server key? Hand over the current one. The answer
@@ -125,6 +119,13 @@ function api_enroll(array $p, array $ctx): array
         rate_hit($bucket);
         throw new WireError('bad_signature', 'enrollment must be signed by the key being registered');
     }
+    $existing = db_one('SELECT * FROM agents WHERE uid = ?', [(string)($p['agent'] ?? '')]);
+    if ($existing && !empty($existing['pubkey']) && hash_equals($existing['pubkey'], $pubB64)) {
+        ipf_check_fresh($p);
+        $resp = agent_process_checkin($existing, $p, $ctx);
+        $resp['enrolled'] = true;
+        return $resp;
+    }
     $token = (string)($p['enroll_token'] ?? '');
     $agent = $token !== '' ? db_one('SELECT * FROM agents WHERE enroll_token_hash = ?', [token_hash($token)]) : null;
     if (!$agent) {
@@ -137,6 +138,7 @@ function api_enroll(array $p, array $ctx): array
         log_event('Enrollment refused: provisioning profile expired ' . fmt_ago((int)$agent['enroll_expires_at']), 'warn', $agent, 'api');
         throw new WireError('enroll_expired', 'provisioning profile has expired; ask for a new one');
     }
+    if (($p['agent'] ?? '') !== $agent['uid']) throw new WireError('enroll_invalid', 'profile identity mismatch');
     ipf_check_fresh($p);
 
     $protector = agent_clean_protector((string)($p['key_protector'] ?? ''));
@@ -146,6 +148,11 @@ function api_enroll(array $p, array $ctx): array
         throw new WireError('protector_too_weak', "this server requires the agent key to be protected by at least '$min'; this machine offered '$protector'");
     }
 
+    db()->beginTransaction();
+    if (db_exec('UPDATE agents SET enroll_token_hash = NULL WHERE id = ? AND enroll_token_hash = ?', [$agent['id'], token_hash($token)]) !== 1) {
+        db()->rollBack();
+        throw new WireError('enroll_invalid', 'provisioning token already consumed');
+    }
     $wasEnrolled = !empty($agent['pubkey']);
     db_update('agents', (int)$agent['id'], [
         'enroll_token_hash' => null,          // single use
@@ -162,6 +169,7 @@ function api_enroll(array $p, array $ctx): array
         'decommission'      => 0,
         'decommissioned_at' => null,
     ]);
+    db()->commit();
     $agent = agent_get((int)$agent['id']);
     log_event(($wasEnrolled ? 'RE-ENROLLED with a new key (previous key revoked)' : 'Enrolled')
         . " from " . client_ip() . " — key " . $agent['pubkey_id'] . ", protected by $protector", 'info', $agent, 'api');
@@ -189,9 +197,11 @@ function api_authenticate(array $p, array $ctx): array
         throw new WireError('unknown_agent', 'this agent is not registered on the server (deleted, or never enrolled)');
     }
     if (ipf_verify_agent_sig($ctx, (string)$agent['pubkey'])) {
+        ipf_check_fresh($p);
         return $agent;
     }
     if (!empty($agent['pending_pubkey']) && ipf_verify_agent_sig($ctx, (string)$agent['pending_pubkey'])) {
+        ipf_check_fresh($p);
         // First request signed by the rotated-in key: the agent has written,
         // read back and is USING it, so the old key can go.
         $raw = base64_decode($agent['pending_pubkey']);
@@ -219,14 +229,12 @@ function api_authenticate(array $p, array $ctx): array
 function api_checkin(array $p, array $ctx): array
 {
     $agent = api_authenticate($p, $ctx);
-    ipf_check_fresh($p);
     return agent_process_checkin($agent, $p, $ctx);
 }
 
 function api_rotate(array $p, array $ctx): array
 {
     $agent = api_authenticate($p, $ctx);
-    ipf_check_fresh($p);
     $newB64 = (string)($p['new_public_key'] ?? '');
     $new = base64_decode($newB64, true);
     if ($new === false) {
@@ -247,6 +255,16 @@ function api_rotate(array $p, array $ctx): array
     ]);
     log_event('Key rotation started: pending key ' . p256_fingerprint($new) . " ($protector)", 'info', $agent, 'api');
     return ['ok' => true, 'pending_key_id' => p256_fingerprint($new)];
+}
+
+function api_decommission_ack(array $p, array $ctx): array
+{
+    $a = api_authenticate($p, $ctx);
+    if (!$a['decommission']) throw new WireError('bad_request', 'Decommission was not requested');
+    $ack = ingest_agent_logs($a, $p['logs'] ?? []);
+    db_update('agents', (int)$a['id'], ['decommissioned_at' => time(), 'pubkey' => null, 'pending_pubkey' => null, 'enroll_token_hash' => null]);
+    log_event('Agent acknowledged decommission; registered identity revoked', 'warn', $a, 'api');
+    return ['ok' => true, 'log_ack' => $ack];
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +297,8 @@ function agent_decide_ip(array $agent, string $remote, ?string $agentV4, ?string
 {
     $serverV4 = is_public_ipv4($remote) ? $remote : null;
     $serverV6 = is_global_ipv6($remote) ? $remote : null;
-    $v6 = $serverV6 ?: $agentV6;
+    // Do not publish an uncorroborated agent-supplied IPv6 prefix into feeds.
+    $v6 = $serverV6 ?: ($agent['trust_mode'] === 'agent' ? $agentV6 : null);
     $mode = $agent['trust_mode'];
 
     if ($mode === 'server') {
@@ -322,6 +341,7 @@ function agent_decide_ip(array $agent, string $remote, ?string $agentV4, ?string
 
 function agent_process_checkin(array $agent, array $p, array $ctx): array
 {
+    $logAck = ingest_agent_logs($agent, $p['logs'] ?? []);
     $now = time();
     $promoted = !empty($agent['_key_promoted']);   // set by api_authenticate; lost on re-read
     $remote = normalize_ip(client_ip());
@@ -330,6 +350,11 @@ function agent_process_checkin(array $agent, array $p, array $ctx): array
     $d = agent_decide_ip($agent, $remote, $agentV4, $agentV6);
 
     $upd = [
+        'release_target'      => in_array($p['release_target'] ?? '', ['windows-x64', 'windows-arm64', 'docker'], true)
+            && str_starts_with($p['release_target'], $agent['platform']) ? $p['release_target'] : '',
+        'release_sequence'    => max(0, (int)($p['release_sequence'] ?? 0)),
+        'update_status'       => diagnostic_redact(substr((string)($p['update_status'] ?? ''), 0, 500)),
+        'sleep_status'        => substr((string)($p['sleep_status'] ?? 'unsupported'), 0, 80),
         'last_checkin_at'     => $now,
         'checkin_count'       => (int)$agent['checkin_count'] + 1,
         'last_remote_addr'    => $remote,
@@ -345,9 +370,7 @@ function agent_process_checkin(array $agent, array $p, array $ctx): array
     if (!empty($p['key_protector'])) {
         $upd['key_protector'] = agent_clean_protector((string)$p['key_protector']);
     }
-    if ($d['v6']) {
-        $upd['current_ipv6'] = $d['v6'];
-    }
+    $upd['current_ipv6'] = $d['v6'];
     if (!$agent['first_checkin_at']) {
         $upd['first_checkin_at'] = $now;
         log_event('First check-in from ' . $remote, 'info', $agent, 'api');
@@ -421,10 +444,12 @@ function agent_process_checkin(array $agent, array $p, array $ctx): array
     db_update('agents', (int)$agent['id'], $upd);
     $agent = agent_get((int)$agent['id']);
 
-    if ($agent['enabled'] && $agent['current_ipv4']) {
+    if (!$agent['decommission'] && $agent['enabled'] && $agent['current_ipv4']) {
         dns_sync_agent($agent, false);
     }
-    return agent_checkin_response($agent, $d, $promoted);
+    $response = agent_checkin_response($agent, $d, $promoted);
+    $response['log_ack'] = $logAck;
+    return $response;
 }
 
 /** Makes $ip the site's authoritative address. Callers decide when that's allowed. */
@@ -460,9 +485,7 @@ function agent_checkin_response(array $agent, array $d, bool $promoted): array
         && ((int)$agent['rotate_requested'] === 1 || ($rotateAge > 0 && $agent['pubkey_at'] && time() - (int)$agent['pubkey_at'] > $rotateAge));
 
     $update = null;
-    if (setting('auto_update') === '1') {
-        $update = agent_update_offer((string)$agent['platform'], (string)$agent['agent_version']);
-    }
+    $update = release_offer($agent);
     return [
         'ok'          => true,
         'agent'       => ['uid' => $agent['uid'], 'name' => $agent['name'], 'enabled' => (bool)$agent['enabled']],
@@ -476,44 +499,11 @@ function agent_checkin_response(array $agent, array $d, bool $promoted): array
         'targets'     => $targets,
         'rotate_key'  => $wantRotate,
         'key_promoted'=> $promoted,
+        'active_key_id'=> $agent['pubkey_id'],
+        'prevent_sleep'=> $agent['platform'] === 'windows' && (bool)$agent['prevent_sleep'],
         'update'      => $update,
         'decommission'=> (bool)$agent['decommission'],
     ];
-}
-
-// ---------------------------------------------------------------------------
-// Agent self-update (hash-pinned inside the authenticated response)
-// ---------------------------------------------------------------------------
-
-function agent_files(string $platform): array
-{
-    $dir = APP_ROOT . '/agents/' . ($platform === 'docker' ? 'docker' : 'windows');
-    return $platform === 'docker'
-        ? ['agent.php' => "$dir/agent.php"]
-        : ['ip-agent.ps1' => "$dir/ip-agent.ps1", 'ip-agent-tray.ps1' => "$dir/ip-agent-tray.ps1"];
-}
-
-function agent_shipped_version(string $platform): ?string
-{
-    $main = array_values(agent_files($platform))[0];
-    if (!is_file($main)) return null;
-    return preg_match('/AGENT_VERSION\s*=\s*[\'"]([0-9.]+)[\'"]/', (string)file_get_contents($main), $m) ? $m[1] : null;
-}
-
-function agent_update_offer(string $platform, string $running): ?array
-{
-    $ver = agent_shipped_version($platform);
-    if (!$ver || $running === '' || version_compare($ver, $running, '<=')) {
-        return null;
-    }
-    $files = [];
-    foreach (agent_files($platform) as $name => $path) {
-        $content = (string)file_get_contents($path);
-        // The whole file travels inside the authenticated, encrypted response,
-        // and the hash is checked again on the agent before anything runs.
-        $files[] = ['name' => $name, 'sha256' => hash('sha256', $content), 'content' => base64_encode($content)];
-    }
-    return ['version' => $ver, 'files' => $files];
 }
 
 // ---------------------------------------------------------------------------

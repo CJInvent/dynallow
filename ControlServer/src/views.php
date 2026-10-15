@@ -27,6 +27,8 @@ function page_header(string $title, string $active = ''): void
         'index'  => ['Dashboard', 'index.php', false],
         'survey' => ['New site', 'survey.php', false],
         'events' => ['Activity', 'events.php', false],
+        'logs' => ['Logs', 'logs.php', false],
+        'releases' => ['Releases', 'releases.php', true],
         'accounts' => ['DNS accounts', 'accounts.php', true],
         'feeds'  => ['Allowlist feeds', 'feeds.php', true],
         'users'  => ['Users', 'users.php', true],
@@ -67,6 +69,8 @@ function page_footer(): void
 function system_banners(array $u): array
 {
     $b = [];
+    $issues = (int)db_val("SELECT COUNT(*) FROM diagnostics WHERE level IN ('warn','error') AND acknowledged_at IS NULL");
+    if ($issues) $b[] = ['warn', '<a href="logs.php?attention=1">' . $issues . ' unacknowledged diagnostic warnings/errors</a>'];
     $cron = (int)setting('cron_last_run');
     if ($cron === 0 || time() - $cron > 300) {
         $b[] = ['bad', '<strong>The cron job is not running</strong> (' . ($cron ? 'last ran ' . h(fmt_ago($cron)) : 'never ran')

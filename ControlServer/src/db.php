@@ -34,17 +34,19 @@ function db_migrate(PDO $pdo): void
     if ($version >= $target) {
         return;
     }
-    $pdo->beginTransaction();
+    $pdo->exec('BEGIN IMMEDIATE');
     try {
+        // Another first request may have migrated while this connection waited.
+        $version = (int)$pdo->query('PRAGMA user_version')->fetchColumn();
         for ($i = $version; $i < $target; $i++) {
             foreach ($migrations[$i] as $sql) {
                 $pdo->exec($sql);
             }
         }
         $pdo->exec('PRAGMA user_version = ' . $target);
-        $pdo->commit();
+        $pdo->exec('COMMIT');
     } catch (Throwable $e) {
-        $pdo->rollBack();
+        $pdo->exec('ROLLBACK');
         throw $e;
     }
 }
@@ -214,6 +216,26 @@ function db_migrations(): array
                 last_used_at INTEGER,
                 last_used_from TEXT
             )",
+        ],
+        // v2: native agents, independently signed releases, diagnostic logs.
+        [
+            "ALTER TABLE agents ADD COLUMN prevent_sleep INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE agents ADD COLUMN sleep_status TEXT NOT NULL DEFAULT 'unknown'",
+            "ALTER TABLE agents ADD COLUMN release_target TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE agents ADD COLUMN release_sequence INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE agents ADD COLUMN update_release_id INTEGER",
+            "ALTER TABLE agents ADD COLUMN update_status TEXT NOT NULL DEFAULT ''",
+            "CREATE TABLE releases (id INTEGER PRIMARY KEY, target TEXT NOT NULL, version TEXT NOT NULL,
+                sequence INTEGER NOT NULL, sha256 TEXT NOT NULL UNIQUE, size INTEGER NOT NULL,
+                created_at INTEGER NOT NULL, uploaded_by TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(target, sequence))",
+            "CREATE TABLE diagnostics (id INTEGER PRIMARY KEY, source TEXT NOT NULL, agent_id INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+                agent_name TEXT, entry_id TEXT NOT NULL, at INTEGER NOT NULL, client_at INTEGER,
+                level TEXT NOT NULL, message TEXT NOT NULL, acknowledged_at INTEGER, acknowledged_by TEXT,
+                UNIQUE(source, agent_id, entry_id))",
+            "CREATE INDEX idx_diag_agent ON diagnostics(agent_id, id)",
+            "CREATE INDEX idx_diag_time ON diagnostics(at)",
+            "CREATE INDEX idx_diag_attention ON diagnostics(level, acknowledged_at, at)",
         ],
     ];
 }

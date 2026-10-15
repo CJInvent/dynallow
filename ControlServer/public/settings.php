@@ -31,7 +31,7 @@ $registry = [
         'enroll_valid_days' => ['Provisioning profiles expire after (days)', ['int', 1, 90], ''],
         'key_max_age_days' => ['Agents rotate their key every (days, 0 = never)', ['int', 0, 3650], ''],
         'clock_skew_sec' => ['Accepted agent clock drift (seconds)', ['int', 60, 3600], 'Agents correct their clock from the server automatically; this only covers the first contact.'],
-        'auto_update' => ['Update agents automatically', 'bool', 'The new code travels inside the authenticated response and is hash-checked and parse-checked before it runs.'],
+        'auto_update' => ['Update agents automatically', 'bool', 'Offer the active offline-signed release for each platform. Clients verify their pinned offline public key and reject downgrades. Use Releases to upload and deploy.'],
         'allow_http_feed' => ['Allow allowlist feeds over plain HTTP', 'bool', 'Not recommended: anyone in the path could add an address to your firewall allowlist.'],
     ],
     'Housekeeping' => [

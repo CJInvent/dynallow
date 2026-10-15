@@ -23,6 +23,11 @@ return [
     // Session cookie: set true once the site is served over HTTPS (it should be).
     'secure_cookies' => false,
 
+    // Public half ONLY, pinned out-of-band. Never store the offline private key here.
+    'release_public_key_file' => __DIR__ . '/release-public.pem',
+    // Mirror audit events to PHP's error log; forward that log to an external collector.
+    'audit_syslog' => true,
+
     // API base overrides — only for testing against mock servers. Leave null.
     'cloudflare_api_base' => null,   // default https://api.cloudflare.com/client/v4
     'duckdns_api_base'    => null,   // default https://www.duckdns.org

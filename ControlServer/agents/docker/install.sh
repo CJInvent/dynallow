@@ -4,6 +4,7 @@
 # provisioning profile and deletes itself after use.
 #
 #   sudo sh ipfailover-__AGENT_UID__.sh                 install
+#   sudo sh ipfailover-__AGENT_UID__.sh --upgrade       preserve an existing identity
 #   sudo sh ipfailover-__AGENT_UID__.sh --reprovision   replace an existing identity
 set -eu
 DIR="${IPF_DIR:-/opt/ipfailover-agent}"
@@ -20,12 +21,21 @@ command -v docker >/dev/null 2>&1 || fail "Docker is not installed (see the READ
 docker compose version >/dev/null 2>&1 || fail "the Docker Compose plugin is missing: apt install docker-compose-plugin"
 docker info >/dev/null 2>&1 || fail "Docker is installed but not running, or this LXC needs nesting=1,keyctl=1 (see the README)."
 
-if [ -f "$DIR/data/state.json" ] && grep -q '"enrolled": true' "$DIR/data/state.json" && [ "${1:-}" != "--reprovision" ]; then
-    fail "this host is already set up ($DIR). To replace its identity: sudo sh $SELF --reprovision"
+case "${1:-}" in ""|--upgrade|--reprovision) ;; *) fail "unknown option: $1" ;; esac
+if [ -f "$DIR/data/state.json" ] && [ "${1:-}" = "" ]; then
+    fail "existing state found; use --upgrade to preserve identity or --reprovision to replace it"
+fi
+if [ "${1:-}" = "--upgrade" ] && [ ! -f "$DIR/data/state.json" ]; then
+    fail "--upgrade requires existing state.json"
+fi
+# Reject preexisting symlinks before root writes/chowns generated content.
+if [ -L "$DIR" ] || { [ -d "$DIR" ] && [ -n "$(find "$DIR" -type l -print -quit)" ]; }; then
+    fail "installation directory contains symlinks"
 fi
 
 say "Installing the IP Failover agent into $DIR"
-mkdir -p "$DIR/data"
+mkdir -p "$DIR/data" "$DIR/app"
+if [ -f "$DIR/docker-compose.yml" ]; then (cd "$DIR" && docker compose down); fi
 if [ "${1:-}" = "--reprovision" ]; then
     (cd "$DIR" && docker compose down 2>/dev/null) || true
     for f in agent-key.json state.json status.json agent.php; do
@@ -34,23 +44,37 @@ if [ "${1:-}" = "--reprovision" ]; then
     say "Old identity destroyed."
 fi
 
-base64 -d > "$DIR/agent.php" <<'B64'
+base64 -d > "$DIR/app/agent.php" <<'B64'
 __AGENT_PHP_B64__
+B64
+base64 -d > "$DIR/app/launcher.php" <<'B64'
+__LAUNCHER_B64__
+B64
+base64 -d > "$DIR/app/release.php" <<'B64'
+__VERIFIER_B64__
+B64
+base64 -d > "$DIR/app/release-public.pem" <<'B64'
+__RELEASE_PUBLIC_B64__
 B64
 base64 -d > "$DIR/docker-compose.yml" <<'B64'
 __COMPOSE_B64__
 B64
+if [ "${1:-}" != "--upgrade" ]; then
 umask 077
 base64 -d > "$DIR/data/provisioning.json" <<'B64'
 __PROFILE_B64__
 B64
 umask 022
+fi
 
 # No /etc/machine-id on this host: drop that mount, or Docker would create a directory there.
 [ -f /etc/machine-id ] || sed -i '/host-machine-id/d' "$DIR/docker-compose.yml"
+chown root:root "$DIR"
+chown -R root:root "$DIR/app"
+chmod 755 "$DIR" "$DIR/app"
 chown -R 65534:65534 "$DIR/data"
 chmod 700 "$DIR/data"
-chmod 644 "$DIR/agent.php" "$DIR/docker-compose.yml"
+chmod 644 "$DIR/app/"* "$DIR/docker-compose.yml"
 
 burn
 cd "$DIR"
@@ -60,7 +84,7 @@ say "Waiting for the first check-in (up to 2 minutes)..."
 i=0
 while [ $i -lt 40 ]; do
     sleep 3; i=$((i + 1))
-    if out=$(docker compose exec -T ipfailover-agent php /app/agent.php health 2>/dev/null); then
+    if out=$(docker compose exec -T ipfailover-agent php /app/launcher.php health 2>/dev/null); then
         say ""; say "  INSTALLED. $out"; say "  Check health any time:  docker ps   (look for 'healthy')"; exit 0
     fi
     case "${out:-}" in *"IP held"*|*"DNS "*|*"enroll"*|*"not valid"*|*"expired"*) break ;; esac

@@ -116,4 +116,4 @@ if __name__ == "__main__":
     port = int(sys.argv[1]); smtp_port = int(sys.argv[2])
     socketserver.ThreadingTCPServer.allow_reuse_address = True
     threading.Thread(target=socketserver.ThreadingTCPServer(("127.0.0.1", smtp_port), SMTP).serve_forever, daemon=True).start()
-    ThreadingHTTPServer(("0.0.0.0", port), H).serve_forever()
+    ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()

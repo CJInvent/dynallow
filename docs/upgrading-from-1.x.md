@@ -1,17 +1,7 @@
-# Upgrading from 1.x (IPUpdater)
+# Replacing pre-service installations
 
-Version 2.0 is a new design: the server does the DNS updates, so the old
-`config.json` with a DNS token on each PC goes away. There's nothing to convert.
+New installations should follow [Add a site](3-add-a-site.md). This page is only for retiring older deployed clients; old executable scripts are not shipped in this source tree.
 
-1. Install the 2.0 control server ([guide](1-install-control-server.md)). It can
-   run on the same Linux box as the 1.x status page, in a new folder.
-2. Add your DNS account(s) once ([guide](2-dns-accounts.md)).
-3. For each site, run **New site** and use the **same hostname** the old agent
-   updated (choose *I'll type the name*).
-4. Run the new installer on the PC. It **removes the old version automatically**:
-   the `IPUpdater` and `IPUpdaterTray` tasks, the old tray, and the `C:\IPUpdater`
-   folder (which held the DNS token in plain text).
-5. Docker sites: `docker compose down` in the old `DockerClient` folder, delete it,
-   then run the new Docker installer.
-6. When every site shows green, retire the old status page and **revoke the old
-   DNS tokens** at your provider — they were stored on site PCs.
+For the previous IPF1 agent, preserve identity using the native EXE's `install` command without a profile, or the Docker installer's `--upgrade`. Back up protected data and verify the former processes have stopped. See the [deployment guide](8-native-agents-and-releases.md).
+
+For pre-IPF1 IPUpdater deployments, create a new server site using the existing hostname. Stop and disable the old updater before installing the new client. The native installer removes known old scheduled tasks, but does not promise to remove arbitrary old processes, scripts, or DNS-token files. Identify and remove those files locally after confirming the replacement works, and revoke the old per-machine DNS tokens. Retire the old status server after all sites have migrated.

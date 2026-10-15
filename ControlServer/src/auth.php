@@ -54,11 +54,6 @@ function current_user(): ?array
     return $user;
 }
 
-function is_admin(): bool
-{
-    return (current_user()['role'] ?? '') === 'admin';
-}
-
 function require_login(): array
 {
     session_boot();
@@ -217,8 +212,9 @@ function totp_verify(array $user, string $code, ?string $secretOverride = null):
     foreach ([0, -1, 1] as $d) {
         $step = $now + $d;
         if ($step > (int)$user['totp_last_step'] && hash_equals(totp_code($secret, $step), $code)) {
-            db_update('users', (int)$user['id'], ['totp_last_step' => $step]);
-            return true;
+            // Atomic consume: parallel requests cannot reuse the same TOTP.
+            return db_exec('UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?',
+                [$step, $user['id'], $step]) === 1;
         }
     }
     return false;

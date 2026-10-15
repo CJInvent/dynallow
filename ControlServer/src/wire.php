@@ -6,7 +6,7 @@ declare(strict_types=1);
  * TLS, when present, is defense in depth.
  *
  * Primitives were chosen because all three runtimes have them natively:
- * .NET Framework 4.7+ (Windows PowerShell 5.1), PHP openssl, .NET 8 (pwsh).
+ * PHP OpenSSL and the native C# agent (.NET 10).
  * No libsodium on the agent side.
  *
  *   Curve        NIST P-256 for both ECDH and ECDSA
@@ -300,7 +300,8 @@ function ipf_check_fresh(array $plain): void
     try {
         db_exec('INSERT INTO seen_nonces(nonce, at) VALUES(?, ?)', [$nonce, time()]);
     } catch (PDOException $e) {
-        throw new WireError('replay', 'this request was already processed');
+        if (($e->errorInfo[1] ?? null) === 19) throw new WireError('replay', 'this request was already processed');
+        throw $e;
     }
 }
 
