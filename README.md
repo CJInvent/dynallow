@@ -1,4 +1,4 @@
-# dynallow — IP Failover
+# DynAllow
 
 Public-IP tracking and DDNS updates at scale, for dynamic firewall allowlisting of client sites.
 
@@ -47,4 +47,4 @@ See [the v3 deployment guide](docs/8-native-agents-and-releases.md) for the Wind
 - [docs/5-allowlist-feeds.md](docs/5-allowlist-feeds.md) — give firewalls a live list of site IPs
 - [docs/6-security.md](docs/6-security.md) — how it's protected, and what it can't protect
 - [docs/7-troubleshooting.md](docs/7-troubleshooting.md) — what each problem means and how to fix it
-- [docs/upgrading-from-1.x.md](docs/upgrading-from-1.x.md) — moving off the old IPUpdater version
+- [docs/upgrading.md](docs/upgrading.md) — upgrading from builds named "IP Failover", or off the old IPUpdater version

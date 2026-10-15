@@ -92,12 +92,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
     if ($action === 'test_mail') {
         $to = alert_recipients() ?: parse_emails((string)$me['email']);
-        $r = send_mail($to, '[IP Failover] Test email', "This is a test from the IP Failover control server.\nIf you can read this, alerts will reach you.\n\nSent by {$me['username']}.");
+        $r = send_mail($to, '[DynAllow] Test email', "This is a test from the DynAllow control server.\nIf you can read this, alerts will reach you.\n\nSent by {$me['username']}.");
         flash($r['ok'] ? 'ok' : 'error', $r['ok'] ? 'Test email sent to ' . implode(', ', $to) . '.' : 'Test failed: ' . $r['error']);
         redirect('settings.php#Email');
     }
     if ($action === 'test_webhook') {
-        notify_webhook('Test webhook', 'This is a test from the IP Failover control server.', null);
+        notify_webhook('Test webhook', 'This is a test from the DynAllow control server.', null);
         flash('ok', 'Test webhook sent (failures appear in Activity).');
         redirect('settings.php#Alerts');
     }
@@ -158,5 +158,5 @@ echo '<div class="card" id="Keys"><h2>Server keys</h2><table class="kv">'
     . '<tr><th>Retired agent keys still honored</th><td>' . (int)db_val("SELECT COUNT(*) FROM server_keys WHERE purpose = 'kex' AND active = 0") . '</td></tr></table>'
     . '<p class="small dim">Rotating creates a new agent key. Agents keep working with the old one and are moved to the new one, authenticated, at their next check-in.</p>'
     . action_button('rotate_server_key', 'Rotate the server agent key', [], '', 'Create a new server key? Existing agents move over automatically.')
-    . '<p class="small dim">Back up <code>data/</code> regularly: <code>php bin/manage.php backup /path/backup.ipfbak</code> — the database alone is useless without <code>data/secret.key</code>.</p></div>';
+    . '<p class="small dim">Back up <code>data/</code> regularly: <code>php bin/manage.php backup /path/backup.dynbak</code> — the database alone is useless without <code>data/secret.key</code>.</p></div>';
 page_footer();

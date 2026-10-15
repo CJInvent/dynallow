@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory(prefix='dynallow-v3-') as temp:
     shutil.copytree(ROOT/'ControlServer',server,ignore=shutil.ignore_patterns('bin','obj','data'))
     # bin/manage.php is real source, not a compiler output.
     shutil.copytree(ROOT/'ControlServer/bin',server/'bin')
-    env=os.environ.copy(); env.update(IPF_ADMIN='admin',IPF_PASSWORD='test-password-long-enough')
+    env=os.environ.copy(); env.update(DYNALLOW_ADMIN='admin',DYNALLOW_PASSWORD='test-password-long-enough')
     run(PHP,str(server/'bin/manage.php'),'init',env=env,stdout=subprocess.DEVNULL)
     project=ROOT/'ControlServer/agents/windows-native'
     run(DOTNET,'build',str(project),'-c','Release','-p:IsAotCompatible=false','--nologo',stdout=subprocess.DEVNULL)
@@ -25,7 +25,7 @@ with tempfile.TemporaryDirectory(prefix='dynallow-v3-') as temp:
     check('Docker helper tests complete' in (work/'docker-tests.log').read_text(),'Docker helper suite')
     # Test boot-time verifier independently of Docker runtime/namespace behavior.
     app=server/'agents/docker'; data=work/'launcher-data';data.mkdir()
-    env2=env|{'DATA_DIR':str(data),'IPF_APP_DIR':str(app)}
+    env2=env|{'DATA_DIR':str(data),'DYNALLOW_APP_DIR':str(app)}
     (data/'agent.php').write_text('<?php file_put_contents('+json.dumps(str(work/'UNTRUSTED_EXECUTED'))+', "bad");')
     run(PHP,str(app/'launcher.php'),'status',env=env2,stdout=subprocess.DEVNULL)
     check(not (work/'UNTRUSTED_EXECUTED').exists(),'Docker ignores legacy writable executable')
@@ -49,7 +49,7 @@ with tempfile.TemporaryDirectory(prefix='dynallow-v3-') as temp:
         # Full PHP agent/server transport + signed update + restart, without Docker daemon.
         docker_data=work/'docker-http';docker_data.mkdir()
         run(PHP,str(ROOT/'tests/docker_http_fixture.php'),str(server),base,str(docker_data),str(app))
-        docker_env=env|{'DATA_DIR':str(docker_data),'IPF_APP_DIR':str(app)}
+        docker_env=env|{'DATA_DIR':str(docker_data),'DYNALLOW_APP_DIR':str(app)}
         agent_log=open(work/'docker-http.log','w')
         try:
             first=subprocess.run([PHP,str(app/'launcher.php'),'once'],env=docker_env,stdout=agent_log,stderr=agent_log,timeout=100)

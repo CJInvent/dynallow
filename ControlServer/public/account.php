@@ -62,10 +62,10 @@ if ($me['totp_enabled']) {
             . input('code', '', 'text', ['inputmode' => 'numeric', 'placeholder' => 'current code', 'autocomplete' => 'one-time-code']) . '<button>Turn off</button></form>';
     }
 } elseif (!empty($_SESSION['totp_pending'])) {
-    $issuer = rawurlencode('IP Failover');
+    $issuer = rawurlencode('DynAllow');
     $uri = 'otpauth://totp/' . $issuer . ':' . rawurlencode($me['username']) . '?secret=' . $_SESSION['totp_pending'] . '&issuer=' . $issuer;
     echo '<ol class="howto"><li>In Microsoft Authenticator, Google Authenticator, 1Password, Bitwarden etc., add an account and choose <b>enter a setup key</b>.</li>'
-        . '<li>Account: <b>IP Failover (' . h($me['username']) . ')</b> · Key:</li></ol><div class="secret" id="totpkey">' . h(trim(chunk_split($_SESSION['totp_pending'], 4, ' '))) . '</div>'
+        . '<li>Account: <b>DynAllow (' . h($me['username']) . ')</b> · Key:</li></ol><div class="secret" id="totpkey">' . h(trim(chunk_split($_SESSION['totp_pending'], 4, ' '))) . '</div>'
         . '<button type="button" class="small mt" data-copy="totpkey">Copy key</button><details class="mt"><summary class="small">Setup link</summary><div class="secret small">' . h($uri) . '</div></details>'
         . '<form method="post" class="row mt">' . csrf_field() . '<input type="hidden" name="action" value="totp_confirm">'
         . input('code', '', 'text', ['inputmode' => 'numeric', 'placeholder' => '6-digit code', 'autocomplete' => 'one-time-code', 'required' => true]) . '<button class="primary">Confirm</button></form>';

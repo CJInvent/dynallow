@@ -69,7 +69,7 @@ foreach ($all as $a) {
 
 if (($_GET['export'] ?? '') === 'csv') {
     header('Content-Type: text/csv; charset=utf-8');
-    header('Content-Disposition: attachment; filename="ipfailover-agents-' . date('Ymd') . '.csv"');
+    header('Content-Disposition: attachment; filename="dynallow-sites-' . date('Ymd') . '.csv"');
     $out = fopen('php://output', 'w');
     fputcsv($out, ['name', 'customer', 'status', 'ipv4', 'ip_source', 'ipv6', 'last_checkin', 'hostnames', 'tags', 'platform', 'version', 'key_protector', 'uid']);
     foreach ($rows as [$a, $st]) {

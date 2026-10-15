@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * IP Failover agent — Docker edition.
+ * DynAllow agent — Docker edition.
  *
  * Deliberately small. It holds NO DNS credentials and talks to NO DNS
  * provider: it proves who it is, reports the address it sees, and does what
@@ -30,7 +30,7 @@ const SPKI_P256_PREFIX = '3059301306072a8648ce3d020106082a8648ce3d030107034200';
 $DATA = rtrim(getenv('DATA_DIR') ?: '/data', '/');
 
 // Executed only by the immutable, signature-checking launcher.
-require_once (getenv('IPF_APP_DIR') ?: '/app') . '/release.php';
+require_once (getenv('DYNALLOW_APP_DIR') ?: '/app') . '/release.php';
 
 function logline(string $level, string $msg): void
 {
@@ -185,7 +185,7 @@ function open_response(array $ctx, string $body): array
 function http_post(string $url, string $body): string
 {
     $ctx = stream_context_create(['http' => [
-        'method' => 'POST', 'header' => "Content-Type: application/json\r\nConnection: close\r\nUser-Agent: ipfailover-agent/" . AGENT_VERSION,
+        'method' => 'POST', 'header' => "Content-Type: application/json\r\nConnection: close\r\nUser-Agent: dynallow-agent/" . AGENT_VERSION,
         'content' => $body, 'timeout' => 30, 'ignore_errors' => true, 'follow_location' => 0,
     ]]);
     $r = @file_get_contents($url, false, $ctx, 0, 1048577);
@@ -198,7 +198,7 @@ function http_post(string $url, string $body): string
 
 function http_get_ip(string $url, int $flag): ?string
 {
-    $r = @file_get_contents($url, false, stream_context_create(['http' => ['timeout' => 8, 'follow_location' => 0, 'header' => 'User-Agent: ipfailover-agent']]), 0, 129);
+    $r = @file_get_contents($url, false, stream_context_create(['http' => ['timeout' => 8, 'follow_location' => 0, 'header' => 'User-Agent: dynallow-agent']]), 0, 129);
     $ip = trim((string)$r);
     return filter_var($ip, FILTER_VALIDATE_IP, $flag) ? $ip : null;
 }
@@ -277,8 +277,8 @@ function consume_profile(?array $state): ?array
         return $state;
     }
     $p = jread($path);
-    if (!$p || ($p['format'] ?? '') !== 'ipfailover-provisioning' || empty($p['enroll_token'])) {
-        logline('ERROR', 'provisioning.json is not a valid IP Failover profile; ignored and deleted');
+    if (!$p || ($p['format'] ?? '') !== 'dynallow-provisioning' || empty($p['enroll_token'])) {
+        logline('ERROR', 'provisioning.json is not a valid DynAllow profile; ignored and deleted');
         return $state;
     }
     if ($state && !empty($state['enrolled'])) {
@@ -425,7 +425,7 @@ function apply_update(array $offer, array &$state): void
     $bytes = @file_get_contents(rtrim($state['control_url'], '/') . '/release.php?sha256=' . $hash, false,
         stream_context_create(['http' => ['timeout' => 120, 'follow_location' => 0]]), 0, RELEASE_MAX_BYTES + 1);
     if ($bytes === false || strlen($bytes) !== (int)$offer['size'] || !hash_equals($hash, hash('sha256', $bytes))) throw new RuntimeException('Release download hash/size mismatch');
-    $pem = (string)file_get_contents((getenv('IPF_APP_DIR') ?: '/app') . '/release-public.pem');
+    $pem = (string)file_get_contents((getenv('DYNALLOW_APP_DIR') ?: '/app') . '/release-public.pem');
     $m = verify_release_bundle($bytes, $pem);
     $watermark = jread("$DATA/update-state.json") ?? [];
     if ($m['target'] !== 'docker' || $m['sequence'] <= max(RELEASE_SEQUENCE, (int)($watermark['sequence'] ?? 0))
@@ -487,7 +487,7 @@ function main(bool $once = false): void
     }
     jwrite($statePath, $state);
     $prev = jread("$DATA/status.json") ?? [];
-    logline('INFO', 'IP Failover agent ' . AGENT_VERSION . ' for ' . ($state['site_name'] ?? '?') . ' -> ' . $state['control_url']);
+    logline('INFO', 'DynAllow agent ' . AGENT_VERSION . ' for ' . ($state['site_name'] ?? '?') . ' -> ' . $state['control_url']);
 
     while (true) {
         $error = null;
@@ -550,7 +550,7 @@ function health(): int
     return 0;
 }
 
-if (defined('IPF_AGENT_TEST')) return;
+if (defined('DYNALLOW_AGENT_TEST')) return;
 $mode = $argv[1] ?? 'run';
 if ($mode === 'health') exit(health());
 if ($mode === 'status') { echo json_encode(jread("$DATA/status.json"), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), "\n"; exit(0); }

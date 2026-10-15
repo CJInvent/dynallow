@@ -33,7 +33,7 @@ $sign = server_key_active('sign');
 if (isset($_GET['pubkey'])) {
     header('Content-Type: application/json');
     echo json_encode(['kid' => $sign['kid'], 'curve' => 'P-256', 'public_key_raw_b64' => $sign['public_key'],
-                      'public_key_pem' => "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode(hex2bin(IPF_SPKI_P256_PREFIX) . base64_decode($sign['public_key'])), 64, "\n") . "-----END PUBLIC KEY-----"]);
+                      'public_key_pem' => "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode(hex2bin(WIRE_SPKI_P256_PREFIX) . base64_decode($sign['public_key'])), 64, "\n") . "-----END PUBLIC KEY-----"]);
     exit;
 }
 

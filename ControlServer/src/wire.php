@@ -38,8 +38,8 @@ declare(strict_types=1);
  * into keys openssl accepts (avoids needing EC-from-params support).
  */
 
-const IPF_SPKI_P256_PREFIX = '3059301306072a8648ce3d020106082a8648ce3d030107034200';
-const IPF_MAX_BODY = 65536;
+const WIRE_SPKI_P256_PREFIX = '3059301306072a8648ce3d020106082a8648ce3d030107034200';
+const WIRE_MAX_BODY = 65536;
 
 final class WireError extends RuntimeException
 {
@@ -83,7 +83,7 @@ function p256_public_from_raw(string $raw)
     if (strlen($raw) !== 65 || $raw[0] !== "\x04") {
         throw new WireError('bad_key', 'public key must be a 65-byte uncompressed P-256 point');
     }
-    $der = hex2bin(IPF_SPKI_P256_PREFIX) . $raw;
+    $der = hex2bin(WIRE_SPKI_P256_PREFIX) . $raw;
     $pem = "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode($der), 64, "\n") . "-----END PUBLIC KEY-----\n";
     $k = openssl_pkey_get_public($pem);
     if ($k === false) {
@@ -169,7 +169,7 @@ function ecdsa_verify_p1363(string $publicRaw, string $data, string $sig): bool
 // ---------------------------------------------------------------------------
 
 /** @return array{req_enc:string, req_mac:string, resp_enc:string, resp_mac:string} */
-function ipf_derive_keys(string $z, string $epk): array
+function wire_derive_keys(string $z, string $epk): array
 {
     $k = hash('sha256', 'IPF1' . $z . $epk, true);
     return [
@@ -231,11 +231,11 @@ function server_key_active(string $purpose): array
 /**
  * Decrypts and integrity-checks a request. Does NOT verify the agent
  * signature (the caller must look up the agent named inside the plaintext
- * first) — see ipf_verify_agent_sig(). Returns [payload, ctx].
+ * first) — see wire_verify_agent_sig(). Returns [payload, ctx].
  */
-function ipf_open_request(string $body): array
+function wire_open_request(string $body): array
 {
-    if (strlen($body) > IPF_MAX_BODY) {
+    if (strlen($body) > WIRE_MAX_BODY) {
         throw new WireError('too_large', 'request too large');
     }
     $env = json_decode($body, true);
@@ -259,7 +259,7 @@ function ipf_open_request(string $body): array
     if ($z === false || strlen($z) !== 32) {
         throw new WireError('bad_key', 'key agreement failed');
     }
-    $keys = ipf_derive_keys($z, $epk);
+    $keys = wire_derive_keys($z, $epk);
     $ctx = ['keys' => $keys, 'epk' => $epk, 'kid' => $kid, 'key_row' => $keyRow];
 
     $expect = hash_hmac('sha256', 'IPF1|req|' . $kid . $epk . $iv . $ct, $keys['req_mac'], true);
@@ -276,7 +276,7 @@ function ipf_open_request(string $body): array
     return [$plain, $ctx];
 }
 
-function ipf_verify_agent_sig(array $ctx, string $publicRawB64): bool
+function wire_verify_agent_sig(array $ctx, string $publicRawB64): bool
 {
     if ($ctx['sig'] === null || $publicRawB64 === '') {
         return false;
@@ -286,7 +286,7 @@ function ipf_verify_agent_sig(array $ctx, string $publicRawB64): bool
 }
 
 /** Freshness + replay. Must run AFTER authentication so strangers can't fill the nonce table. */
-function ipf_check_fresh(array $plain): void
+function wire_check_fresh(array $plain): void
 {
     $skew = (int)setting('clock_skew_sec');
     $ts = (int)($plain['ts'] ?? 0);
@@ -305,7 +305,7 @@ function ipf_check_fresh(array $plain): void
     }
 }
 
-function ipf_seal_response(array $ctx, array $payload): string
+function wire_seal_response(array $ctx, array $payload): string
 {
     $payload['req_nonce'] = $ctx['nonce'];
     $payload['server_ts'] = time();

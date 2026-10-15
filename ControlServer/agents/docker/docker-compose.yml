@@ -1,8 +1,8 @@
-# IP Failover agent. Stock PHP image with immutable launcher, verifier, and base agent.
+# DynAllow agent. Stock PHP image with immutable launcher, verifier, and base agent.
 services:
-  ipfailover-agent:
+  dynallow-agent:
     image: php:8.3-cli-alpine
-    container_name: ipfailover-agent
+    container_name: dynallow-agent
     restart: unless-stopped
     command: ["php", "/app/launcher.php"]
     init: true

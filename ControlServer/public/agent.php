@@ -208,7 +208,7 @@ if (!$agent['pubkey'] || isset($_GET['new'])) {
         echo '<button name="format" value="json">Profile only (.json)</button></form>'
             . '<p class="small dim">Installing from the bare profile? Get the program files from <a href="download.php">Agent files</a>.</p>';
         if ($agent['platform'] === 'docker') {
-            echo '<h3>Then, in the LXC</h3><ol class="howto"><li>Copy the file to the LXC (WinSCP/scp).</li><li>Run <code>sudo bash ipfailover-' . h($agent['uid']) . '.sh</code></li><li>This page turns green within a minute or two.</li></ol>';
+            echo '<h3>Then, in the LXC</h3><ol class="howto"><li>Copy the file to the LXC (WinSCP/scp).</li><li>Run <code>sudo bash dynallow-' . h($agent['uid']) . '.sh</code></li><li>This page turns green within a minute or two.</li></ol>';
         } else {
             echo '<h3>Then, on the PC</h3><ol class="howto"><li>Copy the file to the PC.</li><li>Install the common signed native agent, then run <code>DynAllow.Agent.exe install --profile &quot;path-to-profile.json&quot;</code> from an elevated terminal.</li>'
                 . '<li>A colored dot appears by the clock. This page turns green within a minute or two.</li></ol>';

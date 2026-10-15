@@ -62,7 +62,7 @@ internal static class Install
         store.Initialize();
         if (profile is not null) {
             var p = Store.ReadPath(Path.GetFullPath(profile)) ?? throw new FileNotFoundException("Profile missing");
-            if (p.S("format") != "ipfailover-provisioning" || p.S("enroll_token") == "") throw new InvalidDataException("Invalid profile");
+            if (p.S("format") != "dynallow-provisioning" || p.S("enroll_token") == "") throw new InvalidDataException("Invalid profile");
             if (store.Read("state.json").B("enrolled") && !reprovision) throw new InvalidOperationException("Already enrolled. Omit --profile to migrate/upgrade existing identity, or use --reprovision deliberately");
         }
         if (reprovision && profile is null) throw new InvalidOperationException("--reprovision requires --profile");
@@ -74,6 +74,10 @@ internal static class Install
             Command("schtasks.exe", false, "/End", "/TN", task);
             Command("schtasks.exe", false, "/Delete", "/TN", task, "/F");
         }
+        // The retired PowerShell agent's scripts (they ran as SYSTEM). Its identity in ProgramData stays and is reused.
+        string legacyProgram = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "IPFailoverAgent");
+        try { if (Directory.Exists(legacyProgram)) { RejectLinks(legacyProgram); Directory.Delete(legacyProgram, true); } }
+        catch (Exception e) { Console.WriteLine("Could not remove " + legacyProgram + ": " + AgentLog.Clean(e.Message)); }
         Directory.CreateDirectory(ProgramDir);
         SecureTree(ProgramDir, true);
         string exe = Path.Combine(ProgramDir, "DynAllow.Agent.exe");

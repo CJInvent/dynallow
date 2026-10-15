@@ -33,7 +33,7 @@ if (current_user()) {
 }
 
 page_header('Sign in');
-echo '<div class="login card"><h1>IP Failover</h1>';
+echo '<div class="login card"><h1>DynAllow</h1>';
 if ($error) {
     echo '<div class="flash error">' . h($error) . '</div>';
 }

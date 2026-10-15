@@ -10,7 +10,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Windows platform tests failed' }
 $profile=Join-Path $env:TEMP ('dynallow-profile-'+[Guid]::NewGuid().ToString('N')+'.json')
 $key=[Security.Cryptography.ECDsa]::Create([Security.Cryptography.ECCurve+NamedCurves]::nistP256)
 $p=$key.ExportParameters($false);$raw=[byte[]](@(4)+$p.Q.X+$p.Q.Y)
-@{format='ipfailover-provisioning';control_url='http://127.0.0.1:9';server_key_id='test';server_key=[Convert]::ToBase64String($raw);enroll_token='disposable-test-token';agent_uid='agt_smoketest01';site_name='Disposable smoke test'} | ConvertTo-Json | Set-Content $profile
+@{format='dynallow-provisioning';control_url='http://127.0.0.1:9';server_key_id='test';server_key=[Convert]::ToBase64String($raw);enroll_token='disposable-test-token';agent_uid='agt_smoketest01';site_name='Disposable smoke test'} | ConvertTo-Json | Set-Content $profile
 try {
     & $Executable install --profile $profile --no-tray
     if ($LASTEXITCODE -ne 0) { throw 'Install failed' }

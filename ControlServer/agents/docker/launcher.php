@@ -5,7 +5,7 @@ require __DIR__ . '/release.php';
 $data = rtrim(getenv('DATA_DIR') ?: '/data', '/');
 $mode = $argv[1] ?? 'run';
 $base = __DIR__ . '/agent.php';
-putenv('IPF_APP_DIR=' . __DIR__);
+putenv('DYNALLOW_APP_DIR=' . __DIR__);
 $child = null;
 if (function_exists('pcntl_async_signals')) {
     pcntl_async_signals(true);

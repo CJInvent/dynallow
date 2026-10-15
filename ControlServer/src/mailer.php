@@ -16,7 +16,7 @@ function send_mail(array $to, string $subject, string $body): array
         return ['ok' => false, 'error' => 'no recipients'];
     }
     $from = setting('smtp_from');
-    $fromName = setting('smtp_from_name') ?: 'IP Failover';
+    $fromName = setting('smtp_from_name') ?: 'DynAllow';
     $host = setting('smtp_host');
     if ($from !== '' && !filter_var($from, FILTER_VALIDATE_EMAIL)) return ['ok' => false, 'error' => 'Invalid SMTP from address'];
 
@@ -158,8 +158,8 @@ function notify(string $subject, string $body, ?array $agent = null): void
     if ($agent && $url !== '') {
         $body .= "\n\nAgent page: $url/agent.php?id=" . $agent['id'];
     }
-    $body .= "\n\n-- \nIP Failover control server";
-    $r = send_mail($to, '[IP Failover] ' . $subject, $body);
+    $body .= "\n\n-- \nDynAllow control server";
+    $r = send_mail($to, '[DynAllow] ' . $subject, $body);
     if (!$r['ok']) {
         log_event("Alert email FAILED ($subject): " . $r['error'], 'error', $agent, 'system');
     }
@@ -177,7 +177,7 @@ function notify_webhook(string $subject, string $body, ?array $agent): void
         return;
     }
     $payload = [
-        'text'    => "[IP Failover] $subject\n\n$body",
+        'text'    => "[DynAllow] $subject\n\n$body",
         'subject' => $subject,
         'body'    => $body,
         'agent'   => $agent ? ['uid' => $agent['uid'], 'name' => $agent['name'], 'customer' => $agent['customer'],

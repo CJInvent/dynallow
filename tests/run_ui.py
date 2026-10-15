@@ -23,8 +23,8 @@ with tempfile.TemporaryDirectory(prefix='dynallow-ui-') as tmp:
     s = s.replace("'cloudflare_api_base' => null", f"'cloudflare_api_base' => '{mock}/cf'")
     s = s.replace("'duckdns_api_base'    => null", f"'duckdns_api_base'    => '{mock}'")
     p.write_text(s)
-    env = os.environ | {'IPF_ADMIN':'admin', 'IPF_PASSWORD':'correct-horse-battery',
-        'IPF_TEST_BASE':base, 'IPF_TEST_MOCK':mock, 'IPF_TEST_SMTP_PORT':str(smtp_port)}
+    env = os.environ | {'DYNALLOW_ADMIN':'admin', 'DYNALLOW_PASSWORD':'correct-horse-battery',
+        'DYNALLOW_TEST_BASE':base, 'DYNALLOW_TEST_MOCK':mock, 'DYNALLOW_TEST_SMTP_PORT':str(smtp_port)}
     subprocess.run([PHP, str(server/'bin/manage.php'), 'init'], env=env, check=True, stdout=subprocess.DEVNULL)
     with open(tmp/'services.log', 'w+') as log:
         try:

@@ -38,7 +38,7 @@ try {
 }
 $profileJson = json_encode($profile, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 $format = (string)($_POST['format'] ?? 'json');
-$base = 'ipfailover-' . $agent['uid'];
+$base = 'dynallow-' . $agent['uid'];
 
 header('Cache-Control: no-store, max-age=0');
 header('Pragma: no-cache');

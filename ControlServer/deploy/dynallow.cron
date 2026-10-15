@@ -1,0 +1,3 @@
+# DynAllow: alerts, DNS retries and drift checks. Runs every minute.
+#   cp deploy/dynallow.cron /etc/cron.d/dynallow
+* * * * * www-data /usr/bin/php /var/www/dynallow/bin/cron.php >/dev/null 2>&1

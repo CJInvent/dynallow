@@ -1,6 +1,6 @@
 """Tiny browser: cookie jar + CSRF scraping. Import from tests."""
 import re, urllib.request, urllib.parse, http.cookiejar, os
-BASE = os.environ["IPF_TEST_BASE"]
+BASE = os.environ["DYNALLOW_TEST_BASE"]
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k): return None
 class Browser:

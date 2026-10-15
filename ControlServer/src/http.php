@@ -18,7 +18,7 @@ function http_request(string $method, string $url, array $headers = [], ?string 
         }
     }
     if (!$hasUa) {
-        $hdr[] = 'User-Agent: ipfailover-control/' . APP_VERSION;
+        $hdr[] = 'User-Agent: dynallow-server/' . APP_VERSION;
     }
     $opts = [
         'http' => [

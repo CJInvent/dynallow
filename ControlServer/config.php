@@ -1,5 +1,5 @@
 <?php
-// IP Failover control server — file-level settings.
+// DynAllow control server — file-level settings.
 //
 // Almost everything (email, alert rules, DNS accounts, users) is managed in
 // the web UI. Only things that must be known before the database opens, or

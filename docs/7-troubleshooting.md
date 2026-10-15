@@ -5,7 +5,7 @@ Start on the **site's page** in the web page: the status line and the
 
 | You see | It means | Do this |
 |---|---|---|
-| Red banner: **cron job is not running** | No alerts, no retries | Step 6 of the server install: `cp deploy/ipfailover.cron /etc/cron.d/ipfailover` |
+| Red banner: **cron job is not running** | No alerts, no retries | Step 6 of the server install: `cp deploy/dynallow.cron /etc/cron.d/dynallow` |
 | **IP held** | Agent and server see different IPs | Two internet links at the site? Set the site's **Trust mode** to *Server-seen only*. A proxy (HAProxy) in front of the server? Add it to `trusted_proxies` in `config.php`. Otherwise someone may be relaying the traffic — investigate. |
 | **Server saw a private address** | The server only sees a LAN/proxy IP | Same as above: `trusted_proxies`. |
 | **Agent could not determine its IPv4** | The site can't reach ipify etc. | Check the site's internet / firewall. Settings → General → IP lookup services. |
@@ -23,9 +23,9 @@ Start on the **site's page** in the web page: the status line and the
 ## Logs
 
 - **Windows:** `C:\ProgramData\IPFailoverAgent\public\agent.log` (or tray → **Open log**)
-- **Docker:** `cd /opt/ipfailover-agent && docker compose logs --tail 50`
-- **Docker health:** `docker exec ipfailover-agent php /app/launcher.php health`
-- **Server:** the **Logs** and **Activity** pages, and `/var/log/apache2/ipfailover-error.log`
+- **Docker:** `cd /opt/dynallow-agent && docker compose logs --tail 50`
+- **Docker health:** `docker exec dynallow-agent php /app/launcher.php health`
+- **Server:** the **Logs** and **Activity** pages, and `/var/log/apache2/dynallow-error.log`
 
 ## Useful commands (server)
 
@@ -44,5 +44,5 @@ Admin PowerShell: `& "$env:ProgramFiles\DynAllow\DynAllow.Agent.exe" uninstall`
 ## Remove the agent from Docker by hand
 
 ```bash
-cd /opt/ipfailover-agent && docker compose down && cd / && rm -rf /opt/ipfailover-agent
+cd /opt/dynallow-agent && docker compose down && cd / && rm -rf /opt/dynallow-agent
 ```

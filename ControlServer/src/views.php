@@ -35,10 +35,10 @@ function page_header(string $title, string $active = ''): void
         'settings' => ['Settings', 'settings.php', true],
     ];
     echo '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">';
-    echo '<title>' . h($title) . ' · IP Failover</title><link rel="stylesheet" href="assets/app.css?v=' . APP_VERSION . '">';
+    echo '<title>' . h($title) . ' · DynAllow</title><link rel="stylesheet" href="assets/app.css?v=' . APP_VERSION . '">';
     echo '<script src="assets/app.js?v=' . APP_VERSION . '" defer></script></head><body>';
     if ($u) {
-        echo '<header class="top"><a class="brand" href="index.php"><span class="dot"></span>IP Failover</a><nav>';
+        echo '<header class="top"><a class="brand" href="index.php"><span class="dot"></span>DynAllow</a><nav>';
         foreach ($nav as $key => [$label, $href, $adminOnly]) {
             if ($adminOnly && $u['role'] !== 'admin') {
                 continue; // absent, not disabled
@@ -62,7 +62,7 @@ function page_header(string $title, string $active = ''): void
 
 function page_footer(): void
 {
-    echo '</main><footer>IP Failover control server ' . APP_VERSION . '</footer></body></html>';
+    echo '</main><footer>DynAllow control server ' . APP_VERSION . '</footer></body></html>';
 }
 
 /** Server-wide conditions an operator must not miss. */
@@ -74,7 +74,7 @@ function system_banners(array $u): array
     $cron = (int)setting('cron_last_run');
     if ($cron === 0 || time() - $cron > 300) {
         $b[] = ['bad', '<strong>The cron job is not running</strong> (' . ($cron ? 'last ran ' . h(fmt_ago($cron)) : 'never ran')
-            . '). Missed-check-in emails, DNS retries and drift checks are stopped. See deploy/ipfailover.cron.'];
+            . '). Missed-check-in emails, DNS retries and drift checks are stopped. See deploy/dynallow.cron.'];
     }
     if (!is_https()) {
         $b[] = ['warn', 'This admin page is being served over <strong>plain HTTP</strong>. Agents are protected either way, but your login and session are not. Put the site behind HTTPS.'];

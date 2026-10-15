@@ -54,7 +54,7 @@ function agent_issue_profile(array $agent, string $issuedBy, int $validDays): ar
     $kex = server_key_active('kex');
     log_event('Provisioning profile issued (valid ' . $validDays . ' days); any earlier unused profile is now void', 'info', $agent);
     return [
-        'format'          => 'ipfailover-provisioning',
+        'format'          => 'dynallow-provisioning',
         'version'         => 1,
         'control_url'     => $url,
         'server_key_id'   => $kex['kid'],
@@ -115,13 +115,13 @@ function api_enroll(array $p, array $ctx): array
     }
     p256_public_from_raw($pub); // throws on an invalid point
     // Proof of possession: the request must be signed by the key it registers.
-    if (!ipf_verify_agent_sig($ctx, $pubB64)) {
+    if (!wire_verify_agent_sig($ctx, $pubB64)) {
         rate_hit($bucket);
         throw new WireError('bad_signature', 'enrollment must be signed by the key being registered');
     }
     $existing = db_one('SELECT * FROM agents WHERE uid = ?', [(string)($p['agent'] ?? '')]);
     if ($existing && !empty($existing['pubkey']) && hash_equals($existing['pubkey'], $pubB64)) {
-        ipf_check_fresh($p);
+        wire_check_fresh($p);
         $resp = agent_process_checkin($existing, $p, $ctx);
         $resp['enrolled'] = true;
         return $resp;
@@ -139,7 +139,7 @@ function api_enroll(array $p, array $ctx): array
         throw new WireError('enroll_expired', 'provisioning profile has expired; ask for a new one');
     }
     if (($p['agent'] ?? '') !== $agent['uid']) throw new WireError('enroll_invalid', 'profile identity mismatch');
-    ipf_check_fresh($p);
+    wire_check_fresh($p);
 
     $protector = agent_clean_protector((string)($p['key_protector'] ?? ''));
     $min = setting('min_key_protector');
@@ -196,12 +196,12 @@ function api_authenticate(array $p, array $ctx): array
     if (!$agent || empty($agent['pubkey'])) {
         throw new WireError('unknown_agent', 'this agent is not registered on the server (deleted, or never enrolled)');
     }
-    if (ipf_verify_agent_sig($ctx, (string)$agent['pubkey'])) {
-        ipf_check_fresh($p);
+    if (wire_verify_agent_sig($ctx, (string)$agent['pubkey'])) {
+        wire_check_fresh($p);
         return $agent;
     }
-    if (!empty($agent['pending_pubkey']) && ipf_verify_agent_sig($ctx, (string)$agent['pending_pubkey'])) {
-        ipf_check_fresh($p);
+    if (!empty($agent['pending_pubkey']) && wire_verify_agent_sig($ctx, (string)$agent['pending_pubkey'])) {
+        wire_check_fresh($p);
         // First request signed by the rotated-in key: the agent has written,
         // read back and is USING it, so the old key can go.
         $raw = base64_decode($agent['pending_pubkey']);

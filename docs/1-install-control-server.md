@@ -14,27 +14,27 @@ can reach on the internet. About 10 minutes.
 
    (`openssl` and `sodium` come built into PHP. Nothing else is needed.)
 
-2. **Copy the files.** Put the `ControlServer` folder at `/var/www/ipfailover`:
+2. **Copy the files.** Put the `ControlServer` folder at `/var/www/dynallow`:
 
    ```bash
-   sudo cp -r ControlServer /var/www/ipfailover
-   sudo chown -R www-data:www-data /var/www/ipfailover
+   sudo cp -r ControlServer /var/www/dynallow
+   sudo chown -R www-data:www-data /var/www/dynallow
    ```
 
 3. **Create the database and your admin login.** It asks for a username and a password (12+ characters):
 
    ```bash
-   cd /var/www/ipfailover
+   cd /var/www/dynallow
    sudo -u www-data php bin/manage.php init
    ```
 
 4. **Turn on the website.** Edit the `ServerName` line first, then:
 
    ```bash
-   sudo cp deploy/apache-ipfailover.conf /etc/apache2/sites-available/ipfailover.conf
-   sudo nano /etc/apache2/sites-available/ipfailover.conf      # set ServerName
+   sudo cp deploy/apache-dynallow.conf /etc/apache2/sites-available/dynallow.conf
+   sudo nano /etc/apache2/sites-available/dynallow.conf      # set ServerName
    sudo a2enmod headers
-   sudo a2ensite ipfailover
+   sudo a2ensite dynallow
    sudo systemctl reload apache2
    ```
 
@@ -50,7 +50,7 @@ can reach on the internet. About 10 minutes.
 6. **Turn on the cron job.** This sends the alerts and retries DNS. Without it, no emails!
 
    ```bash
-   sudo cp deploy/ipfailover.cron /etc/cron.d/ipfailover
+   sudo cp deploy/dynallow.cron /etc/cron.d/dynallow
    ```
 
 7. **Sign in** at `https://ipctl.yourdomain.com` and go to **Settings**:
@@ -61,7 +61,7 @@ can reach on the internet. About 10 minutes.
 8. **Make a backup now, and on a schedule:**
 
    ```bash
-   sudo -u www-data php bin/manage.php backup /root/ipfailover-$(date +%F).ipfbak
+   sudo -u www-data php bin/manage.php backup /root/dynallow-$(date +%F).dynbak
    ```
 
    It asks for a passphrase. **Keep the passphrase somewhere safe.** The backup holds

@@ -16,7 +16,15 @@ function db(): PDO
     if (!is_dir($dir)) {
         throw new RuntimeException("Data directory $dir does not exist. Run: php bin/manage.php init");
     }
-    $pdo = new PDO('sqlite:' . $dir . '/ipfailover.sqlite');
+    // Adopt a database from before the rename (2.x shipped as "IP Failover").
+    if (!is_file("$dir/dynallow.sqlite") && is_file("$dir/ipfailover.sqlite")) {
+        foreach (['', '-wal', '-shm'] as $sfx) {
+            if (is_file("$dir/ipfailover.sqlite$sfx")) {
+                @rename("$dir/ipfailover.sqlite$sfx", "$dir/dynallow.sqlite$sfx"); // a concurrent first request may win
+            }
+        }
+    }
+    $pdo = new PDO('sqlite:' . $dir . '/dynallow.sqlite');
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
     $pdo->exec('PRAGMA journal_mode = WAL');
@@ -237,6 +245,10 @@ function db_migrations(): array
             "CREATE INDEX idx_diag_time ON diagnostics(at)",
             "CREATE INDEX idx_diag_attention ON diagnostics(level, acknowledged_at, at)",
         ],
+        // v3: product renamed. Only touches a sender name nobody customised.
+        [
+            "UPDATE settings SET value = 'DynAllow' WHERE key = 'smtp_from_name' AND value = 'IP Failover'",
+        ],
     ];
 }
 
@@ -320,7 +332,7 @@ function setting_defaults(): array
         'smtp_user'            => '',
         'smtp_pass_enc'        => '',
         'smtp_from'            => '',
-        'smtp_from_name'       => 'IP Failover',
+        'smtp_from_name'       => 'DynAllow',
         'cron_last_run'        => '0',
     ];
 }

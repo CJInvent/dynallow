@@ -21,10 +21,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
     exit;
 }
 
-$body = (string)file_get_contents('php://input', false, null, 0, IPF_MAX_BODY + 1);
+$body = (string)file_get_contents('php://input', false, null, 0, WIRE_MAX_BODY + 1);
 
 try {
-    [$plain, $ctx] = ipf_open_request($body);
+    [$plain, $ctx] = wire_open_request($body);
 } catch (WireError $e) {
     // We could not even derive the response key, so this answer is
     // unauthenticated. Agents treat it as a transport failure, never as an
@@ -48,4 +48,4 @@ try {
     server_diagnostic('error', 'API failure: ' . get_class($e) . ': ' . $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine());
     $resp = ['ok' => false, 'error' => 'server_error', 'message' => 'internal server error (see server log)'];
 }
-echo ipf_seal_response($ctx, $resp);
+echo wire_seal_response($ctx, $resp);

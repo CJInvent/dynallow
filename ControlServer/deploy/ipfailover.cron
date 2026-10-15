@@ -1,3 +1,0 @@
-# IP Failover: alerts, DNS retries and drift checks. Runs every minute.
-#   cp deploy/ipfailover.cron /etc/cron.d/ipfailover
-* * * * * www-data /usr/bin/php /var/www/ipfailover/bin/cron.php >/dev/null 2>&1

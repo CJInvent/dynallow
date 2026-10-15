@@ -7,13 +7,13 @@ function rejects(callable $fn, string $label): void { try { $fn(); } catch (Thro
 function request_for(array $plain, array $identity): array {
     $server = server_key_active('kex'); $e = p256_generate();
     $z = openssl_pkey_derive(p256_public_from_raw(base64_decode($server['public_key'])), openssl_pkey_get_private($e['private_pem']), 32);
-    $keys = ipf_derive_keys($z, $e['public_raw']);
+    $keys = wire_derive_keys($z, $e['public_raw']);
     $plain += ['ts' => time(), 'nonce' => bin2hex(random_bytes(16))];
     [$iv, $ct] = aes_cbc_encrypt($keys['req_enc'], json_encode($plain));
     $mac = hash_hmac('sha256', 'IPF1|req|' . $server['kid'] . $e['public_raw'] . $iv . $ct, $keys['req_mac'], true);
     $sig = ecdsa_sign_p1363($identity['private_pem'], 'IPF1|sig|' . $server['kid'] . $e['public_raw'] . $iv . $ct . $mac);
     $body = json_encode(['v' => 1, 'kid' => $server['kid'], 'epk' => base64_encode($e['public_raw']), 'iv' => base64_encode($iv), 'ct' => base64_encode($ct), 'mac' => base64_encode($mac), 'sig' => base64_encode($sig)]);
-    [$p, $ctx] = ipf_open_request($body); return [$p, $ctx];
+    [$p, $ctx] = wire_open_request($body); return [$p, $ctx];
 }
 function dispatch(array $plain, array $key): array { [$p, $ctx] = request_for($plain, $key); return api_dispatch($p, $ctx); }
 $_SERVER['REMOTE_ADDR'] = '8.8.8.8';
@@ -89,7 +89,7 @@ ok(agent_get((int)$a['id'])['pubkey']===null,'decommission revokes registered id
 if (!empty($argv[2])) {
     $dir=$argv[2]; $e=json_decode(file_get_contents("$dir/csharp-request.json"),true);
     $epk=base64_decode($e['epk']); $z=openssl_pkey_derive(p256_public_from_raw($epk),openssl_pkey_get_private(file_get_contents("$dir/server-private.pem")),32);
-    $keys=ipf_derive_keys($z,$epk); $iv=base64_decode($e['iv']); $ct=base64_decode($e['ct']); $mac=base64_decode($e['mac']);
+    $keys=wire_derive_keys($z,$epk); $iv=base64_decode($e['iv']); $ct=base64_decode($e['ct']); $mac=base64_decode($e['mac']);
     ok(hash_equals($mac,hash_hmac('sha256','IPF1|req|'.$e['kid'].$epk.$iv.$ct,$keys['req_mac'],true)),'C# -> PHP wire MAC interoperability');
     $data='IPF1|sig|'.$e['kid'].$epk.$iv.$ct.$mac;
     ok(openssl_verify($data,ecdsa_p1363_to_der(base64_decode($e['sig'])),file_get_contents("$dir/agent-public.pem"),OPENSSL_ALGO_SHA256)===1,'C# -> PHP identity signature interoperability');

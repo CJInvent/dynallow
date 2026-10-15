@@ -16,7 +16,7 @@ function session_boot(): void
     if (session_status() === PHP_SESSION_ACTIVE) {
         return;
     }
-    session_name('ipfsid');
+    session_name('dynsid');
     session_set_cookie_params([
         'lifetime' => 0,
         'path'     => '/',

@@ -1,7 +1,7 @@
 import sys, re, json, subprocess, os
-BASE = os.environ["IPF_TEST_BASE"]
-MOCK = os.environ["IPF_TEST_MOCK"]
-SMTP_PORT = os.environ["IPF_TEST_SMTP_PORT"]
+BASE = os.environ["DYNALLOW_TEST_BASE"]
+MOCK = os.environ["DYNALLOW_TEST_MOCK"]
+SMTP_PORT = os.environ["DYNALLOW_TEST_SMTP_PORT"]
 sys.path.insert(0, sys.argv[1]); from web import Browser, flashes
 S = sys.argv[1]; ok = 0; bad = 0
 def check(cond, msg):
