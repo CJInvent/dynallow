@@ -14,7 +14,9 @@ with tempfile.TemporaryDirectory(prefix='dynallow-v3-') as temp:
     work=pathlib.Path(temp); server=work/'server'
     shutil.copytree(ROOT/'ControlServer',server,ignore=shutil.ignore_patterns('bin','obj','data'))
     if DEV:
-        cfg=server/'config.php';cfg.write_text(cfg.read_text().replace("'allow_dev_releases' => false", "'allow_dev_releases' => true"))
+        cfg=server/'config.php';text,n=re.subn(r"'allow_dev_releases' => [^\n]*,", "'allow_dev_releases' => true,", cfg.read_text())
+        if n!=1: raise AssertionError('could not switch the test server to development mode')
+        cfg.write_text(text)
     # bin/manage.php is real source, not a compiler output.
     shutil.copytree(ROOT/'ControlServer/bin',server/'bin')
     env=os.environ.copy(); env.update(DYNALLOW_ADMIN='admin',DYNALLOW_PASSWORD='test-password-long-enough')
@@ -35,7 +37,7 @@ with tempfile.TemporaryDirectory(prefix='dynallow-v3-') as temp:
     run(PHP,str(app/'launcher.php'),'status',env=env2,stdout=subprocess.DEVNULL)
     check(not (work/'UNTRUSTED_EXECUTED').exists(),'Docker ignores legacy writable executable')
     (data/'current-release.json').write_text('{"manifest":"bad","signature":"bad","files":{}}')
-    r=subprocess.run([PHP,str(app/'launcher.php'),'status'],env=env2,capture_output=True,text=True)
+    r=subprocess.run([PHP,str(app/'launcher.php'),'status'],env=env2,capture_output=True,encoding='utf-8',errors='replace')
     check(r.returncode!=0 and 'VERIFICATION FAILED' in r.stderr,'Docker launcher fails closed on untrusted staged update')
     # Real HTTP sessions: admin vs tech, CSRF, log escaping, token scope.
     s=socket.socket();s.bind(('127.0.0.1',0));port=s.getsockname()[1];s.close()

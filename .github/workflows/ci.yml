@@ -28,36 +28,49 @@ jobs:
         run: tests/local-gates.sh
 
   docker-e2e:
-    name: Docker end-to-end (server image, generated installer, signed update)
+    name: Docker end-to-end, ${{ matrix.channel }} releases (server image, generated installer, update)
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [dev, signed]
     steps:
       - uses: actions/checkout@v5
       - name: Server container + real agent container
+        env:
+          DYNALLOW_E2E_CHANNEL: ${{ matrix.channel }}
         run: |
           set -o pipefail
-          sudo python3 tests/docker_e2e.py 2>&1 | tee e2e.log || {
+          sudo -E python3 tests/docker_e2e.py 2>&1 | tee e2e.log || {
             echo "::error title=Docker end-to-end::$(grep -E 'AssertionError|Error|timed out' e2e.log | tail -5 | sed ':a;N;$!ba;s/\n/%0A/g')"
             exit 1; }
 
   windows:
-    name: Windows native agent (AOT build, platform tests, service smoke)
+    name: Windows native agent, ${{ matrix.channel }} build (AOT, platform tests, service smoke)
     runs-on: windows-2025
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [development, signed]
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '10.0.x'
-      - name: Ephemeral TEST trust anchor (never shipped)
+      - name: Native AOT build + portable self-tests (development, no key)
+        if: matrix.channel == 'development'
+        shell: pwsh
+        run: ./tools/Build-Windows.ps1 -Development -OutputDirectory "$env:RUNNER_TEMP/test-build"
+      - name: Native AOT build + portable self-tests (signed policy, throwaway public key)
+        if: matrix.channel == 'signed'
         shell: pwsh
         run: |
           $key = [Security.Cryptography.ECDsa]::Create([Security.Cryptography.ECCurve+NamedCurves]::nistP256)
           [IO.File]::WriteAllText("$env:RUNNER_TEMP/test-public.pem", $key.ExportSubjectPublicKeyInfoPem())
           $key.Dispose()
-      - name: Native AOT build + portable self-tests
-        shell: pwsh
-        run: ./tools/Build-Windows.ps1 -PublicKey "$env:RUNNER_TEMP/test-public.pem" -OutputDirectory "$env:RUNNER_TEMP/test-build"
+          ./tools/Build-Windows.ps1 -PublicKey "$env:RUNNER_TEMP/test-public.pem" -OutputDirectory "$env:RUNNER_TEMP/test-build"
       - name: Platform tests and service smoke (install, profile consumption, ACLs, check-now, restart, purge)
         shell: pwsh
         run: ./tests/windows-smoke.ps1 -Executable "$env:RUNNER_TEMP/test-build/DynAllow.Agent.exe"

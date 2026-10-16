@@ -2,6 +2,7 @@
 data/
 .env
 release-public.pem
+trust/
 *.dynbak
 # The Windows agent is built separately (tools/Build-Windows.ps1); the server never serves it.
 agents/windows-native/

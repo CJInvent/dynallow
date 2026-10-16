@@ -8,6 +8,8 @@ everything a technician does, and only reads the database to assert results.
   DYNALLOW_E2E_IMAGE=tag ...                  use an already built image instead
   DYNALLOW_E2E_BUILD_NETWORK=host ...         pass --network host to docker build
   DYNALLOW_E2E_KEEP=1 ...                     leave containers/files for inspection
+  DYNALLOW_E2E_CHANNEL=dev ...                development server: SHA-256-only releases, no key
+                                              (default: signed, with a throwaway release key)
 
 The server runs with host networking (port 80) so the agent container, which
 lives on its own Compose network, reaches it through a host address exactly the
@@ -20,6 +22,7 @@ SERVER = 'dynallow-e2e-server'
 AGENT = 'dynallow-agent'
 PASSWORD = 'e2e-password-not-secret'
 KEEP = os.environ.get('DYNALLOW_E2E_KEEP') == '1'
+DEV = os.environ.get('DYNALLOW_E2E_CHANNEL', 'signed') == 'dev'
 passed = 0
 
 
@@ -73,6 +76,14 @@ def sign_bundle(key, target, version, sequence, name, payload):
                        'files': {name: base64.b64encode(payload).decode()}}).encode()
 
 
+def load_devpack():
+    """tools/New-DevRelease.py, the same packager developers and the dev release use."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location('devpack', ROOT / 'tools/New-DevRelease.py')
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+    return mod
+
+
 def multipart(fields, file_field, filename, content):
     boundary = uuid.uuid4().hex
     out = b''
@@ -107,13 +118,18 @@ def main():
             if os.environ.get('DYNALLOW_E2E_BUILD_NETWORK'):
                 build += ['--network', os.environ['DYNALLOW_E2E_BUILD_NETWORK']]
             sh(*build, str(ROOT / 'ControlServer'))
-        sh('openssl', 'ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', str(work / 'release-private.pem'))
-        sh('openssl', 'ec', '-in', str(work / 'release-private.pem'), '-pubout', '-out', str(work / 'release-public.pem'))
+        (work / 'trust').mkdir()
+        if not DEV:  # production trust: throwaway key; the private half never leaves this temp dir
+            sh('openssl', 'ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', str(work / 'release-private.pem'))
+            sh('openssl', 'ec', '-in', str(work / 'release-private.pem'), '-pubout', '-out', str(work / 'trust' / 'release-public.pem'))
         (work / 'data').mkdir()
         sh('docker', 'rm', '-f', SERVER, check_rc=False)
         sh('docker', 'run', '-d', '--name', SERVER, '--network', 'host', '--init',
            '-e', 'DYNALLOW_ADMIN=admin', '-e', 'DYNALLOW_PASSWORD=' + PASSWORD,
-           '-v', f'{work}/data:/var/www/dynallow/data', '-v', f'{work}/release-public.pem:/var/www/dynallow/release-public.pem:ro', image)
+           '-e', 'DYNALLOW_ALLOW_DEV_RELEASES=' + ('1' if DEV else '0'),
+           '-e', 'DYNALLOW_RELEASE_KEY_FILE=/var/www/dynallow/trust/release-public.pem',
+           '-v', f'{work}/data:/var/www/dynallow/data', '-v', f'{work}/trust:/var/www/dynallow/trust:ro', image)
+        print('channel:', 'dev-sha256 (no release key)' if DEV else 'signed (throwaway release key)', flush=True)
         wait(lambda: health(SERVER) == 'healthy', 'server container healthy', 120)
         check(True, 'server image builds and its container reports healthy')
         logs = sh('docker', 'logs', SERVER).stdout + sh('docker', 'logs', SERVER).stderr
@@ -128,7 +144,7 @@ def main():
         b.get('login.php')
         c, t, h = b.post('login.php', {'username': 'admin', 'password': PASSWORD})
         check('<h1>Sites' in t, 'admin signs in to the containerized server')
-        for p in ['config.php', 'data/secret.key', 'data/dynallow.sqlite', 'src/db.php', 'bin/manage.php', 'release-public.pem']:
+        for p in ['config.php', 'data/secret.key', 'data/dynallow.sqlite', 'src/db.php', 'bin/manage.php', 'trust/release-public.pem']:
             c, _, _ = Browser('http://127.0.0.1').get(p)
             if c != 404:
                 raise AssertionError(f'{p} is reachable over HTTP ({c})')
@@ -166,6 +182,8 @@ def main():
               and any('no-new-privileges' in o for o in hc['SecurityOpt'] or []), 'agent runs as nobody, read-only, all capabilities dropped')
         a = db('SELECT * FROM agents WHERE id = ?', agent_id)
         check(a['enrolled_at'] and a['release_target'] == 'docker' and a['key_protector'], 'server shows the agent enrolled with its release target')
+        want = 'dev-sha256' if DEV else 'signed'
+        check(a['update_channel'] == want, f'agent reports the {want} update channel from its read-only policy')
 
         sh('docker', 'restart', AGENT)  # second cycle uses the server-provided IP lookup
         a = wait(lambda: (lambda x: x if x['current_ipv4'] == '8.8.8.8' else None)(db('SELECT * FROM agents WHERE id = ?', agent_id)), 'authoritative IP')
@@ -179,9 +197,19 @@ def main():
         new_ver, new_seq = f'{major}.{minor}.{patch + 1}', seq + 1
         new_code = code.replace(f"const AGENT_VERSION = '{ver}';", f"const AGENT_VERSION = '{new_ver}';").replace(
             f'const RELEASE_SEQUENCE = {seq};', f'const RELEASE_SEQUENCE = {new_seq};').encode()
-        bundle = sign_bundle(work / 'release-private.pem', 'docker', new_ver, new_seq, 'agent.php', new_code)
         wrong = work / 'other-private.pem'
         sh('openssl', 'ecparam', '-name', 'prime256v1', '-genkey', '-noout', '-out', str(wrong))
+        devpack = load_devpack()
+        src = work / 'agent-next.php'; src.write_bytes(new_code)
+        if DEV:
+            bundle = devpack.make_bundle('docker', new_ver, new_seq, src)
+            bad = json.loads(bundle); bad['files']['agent.php'] = base64.b64encode(b'<?php echo "tampered";').decode()
+            rejects = [(json.dumps(bad).encode(), 'a dev bundle whose payload does not match its SHA-256'),
+                       (sign_bundle(wrong, 'docker', new_ver, new_seq, 'agent.php', new_code), 'a signed bundle it has no key for')]
+        else:
+            bundle = sign_bundle(work / 'release-private.pem', 'docker', new_ver, new_seq, 'agent.php', new_code)
+            rejects = [(sign_bundle(wrong, 'docker', new_ver, new_seq, 'agent.php', new_code), 'a release signed with the wrong key'),
+                       (devpack.make_bundle('docker', new_ver, new_seq, src), 'an unsigned dev bundle on a production server')]
         def upload(payload):
             b.get('releases.php')
             body, ctype = multipart({'csrf': b.csrf, 'action': 'upload'}, 'bundle', 'release.json', payload)
@@ -190,11 +218,12 @@ def main():
             except urllib.error.HTTPError as e:
                 if e.code != 302:  # the page redirects after every upload, accepted or not
                     raise
-        upload(sign_bundle(wrong, 'docker', new_ver, new_seq, 'agent.php', new_code))
-        check(db('SELECT COUNT(*) AS n FROM releases')['n'] == 0, 'server rejects a release signed with the wrong key')
+        for payload, label in rejects:
+            upload(payload)
+            check(db('SELECT COUNT(*) AS n FROM releases')['n'] == 0, f'server rejects {label}')
         upload(bundle)
         rel = db('SELECT * FROM releases WHERE target = ? AND sequence = ?', 'docker', new_seq)
-        check(rel and rel['version'] == new_ver, 'signed Docker release uploads through the web UI')
+        check(rel and rel['version'] == new_ver and rel['channel'] == want, f'{want} Docker release uploads through the web UI')
         b.get('releases.php')
         c, t, h = b.post('releases.php', {'action': 'push', 'release': str(rel['id']), 'agent': str(agent_id)})
         check(any(k == 'ok' for k, _ in flashes(t)), 'release pushed to the agent')

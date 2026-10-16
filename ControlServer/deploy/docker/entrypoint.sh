@@ -10,13 +10,12 @@ mkdir -p "$DATA"
 chown www-data:www-data "$DATA"
 chmod 750 "$DATA"
 
-# The release trust anchor is mounted read-only. Docker turns a missing file into an empty directory.
-if [ -d "$APP/release-public.pem" ]; then
-    say "ERROR: release-public.pem is missing on the host (Docker made a directory in its place)."
-    say "Put the PUBLIC release key next to docker-compose.yml as release-public.pem, delete the empty directory, and start again."
-    exit 1
-fi
-[ -f "$APP/release-public.pem" ] || say "WARNING: no release-public.pem mounted. Docker installers and signed updates are disabled until it is."
+# Release trust: the PUBLIC key in the read-only ./trust mount (production), or development mode.
+KEY="${DYNALLOW_RELEASE_KEY_FILE:-$APP/release-public.pem}"
+case "${DYNALLOW_ALLOW_DEV_RELEASES:-0}" in
+    1|true|yes|on) say "DEVELOPMENT server: agent releases are checked by SHA-256 only. Never use this for customers." ;;
+    *) [ -f "$KEY" ] || say "WARNING: no release key at $KEY. Docker installers and agent updates stay off until it is there (or set DYNALLOW_ALLOW_DEV_RELEASES=1 on a dev server)." ;;
+esac
 
 if [ ! -f "$DATA/dynallow.sqlite" ] && [ ! -f "$DATA/ipfailover.sqlite" ]; then
     export DYNALLOW_ADMIN="${DYNALLOW_ADMIN:-admin}"

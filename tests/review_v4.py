@@ -52,13 +52,13 @@ try {
   echo release_offer($a)===null ? 'none' : 'offer';
  } else {release_store(file_get_contents($argv[2]),'test');echo 'stored';}
 } catch(Throwable $e) {fwrite(STDERR,$e->getMessage());exit(1);}''')
-    def store(*extra):return subprocess.run([PHP,str(store_probe),str(server),str(bundle_path),*extra],capture_output=True,text=True)
+    def store(*extra, dev=False):
+        e = env | {'DYNALLOW_ALLOW_DEV_RELEASES': '1' if dev else '0'}
+        return subprocess.run([PHP,str(store_probe),str(server),str(bundle_path),*extra],capture_output=True,text=True,env=e)
     check(store().returncode!=0, 'production server refuses development upload')
-    config=server/'config.php';original=config.read_text();config.write_text(original.replace("'allow_dev_releases' => false", "'allow_dev_releases' => true"))
-    check(store().stdout=='stored', 'development server accepts hash-only upload without signing key')
-    check(store('offer','signed').stdout=='none', 'server never offers dev payload to production channel')
-    check(store('offer','dev-sha256').stdout=='offer', 'server offers matching dev payload to dev channel')
-    config.write_text(original)
+    check(store(dev=True).stdout=='stored', 'development server accepts hash-only upload without signing key')
+    check(store('offer','signed',dev=True).stdout=='none', 'server never offers dev payload to production channel')
+    check(store('offer','dev-sha256',dev=True).stdout=='offer', 'server offers matching dev payload to dev channel')
     check(store('offer','dev-sha256').stdout=='none', 'disabling development mode suppresses queued dev offers')
     # Fake only external Docker calls; installer executes its real preflight and must not mutate identities.
     fake=work/'fakebin';fake.mkdir();docker=fake/'docker';docker.write_text('#!/bin/sh\necho "$*" >> "$DOCKER_TRACE"\nexit 0\n');docker.chmod(0o755)

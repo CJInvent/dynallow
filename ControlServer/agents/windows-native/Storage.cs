@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
@@ -6,9 +7,25 @@ namespace DynAllow;
 
 internal static class J
 {
-    public static string S(this JsonNode? o, string k, string fallback = "") => o?[k]?.GetValue<string>() ?? fallback;
-    public static long N(this JsonNode? o, string k, long fallback = 0) => o?[k]?.GetValue<long>() ?? fallback;
-    public static bool B(this JsonNode? o, string k, bool fallback = false) => o?[k]?.GetValue<bool>() ?? fallback;
+    // Read by JSON kind, never by CLR type: a node built in memory from an int is a JsonValue<int>, and
+    // GetValue<long>() on it THROWS (that crashed the first cycle after provisioning). PHP may also send
+    // 1/0 for booleans or numbers where strings are expected. Wrong-kind values fall back, never throw.
+    public static string S(this JsonNode? o, string k, string fallback = "") => o?[k] is JsonValue v ? v.GetValueKind() switch {
+        JsonValueKind.String => v.GetValue<string>(),
+        JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False => v.ToJsonString(),
+        _ => fallback } : fallback;
+    public static long N(this JsonNode? o, string k, long fallback = 0)
+    {
+        if (o?[k] is not JsonValue v) return fallback;
+        string text = v.GetValueKind() switch { JsonValueKind.Number => v.ToJsonString(), JsonValueKind.String => v.GetValue<string>(), _ => "" };
+        if (long.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long l)) return l;
+        return double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double d) && Math.Abs(d) < 9e18 ? (long)d : fallback;
+    }
+    public static bool B(this JsonNode? o, string k, bool fallback = false) => o?[k] is JsonValue v ? v.GetValueKind() switch {
+        JsonValueKind.True => true, JsonValueKind.False => false,
+        JsonValueKind.Number => o.N(k) != 0,
+        JsonValueKind.String => v.GetValue<string>() is "1" or "true",
+        _ => fallback } : fallback;
     public static JsonObject Obj(string s) => JsonNode.Parse(s, documentOptions: new() { MaxDepth = 32 }) as JsonObject ?? throw new InvalidDataException("Expected JSON object");
     public static JsonNode? Copy(this JsonNode? n) => n?.DeepClone();
 }

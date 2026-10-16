@@ -36,7 +36,8 @@ docker compose logs server | grep password # the admin password, shown once
 
 1. Open `http://<host>:8080` and sign in. Change the password (**Account**).
 2. **Settings → General → Public URL for agents:** the address sites will use, e.g. `http://<host>:8080`. **Save**.
-3. **Releases:** the fingerprint shown must match the one in the release notes.
+3. **Releases** says **DEVELOPMENT MODE**: dev releases are checked by SHA-256, with no signing key
+   ([why that's fine for dev, and only dev](docs/9-development.md)). Verify downloads with `sha256sum -c SHA256SUMS`.
 
 Behind HAProxy or another HTTPS proxy? In `.env` set `DYNALLOW_TRUSTED_PROXIES` to the proxy's IP and
 `DYNALLOW_SECURE_COOKIES=1`, then run `docker compose up -d` again.
@@ -82,10 +83,11 @@ Work through [TEST-LEDGER.md](TEST-LEDGER.md) and add your run to its log. The t
 | Folder | What it is |
 |---|---|
 | `ControlServer/` | The server (PHP 8.3, SQLite) and its Docker build. Agent sources are in `agents/`. |
-| `tools/` | Windows build, release signing, dev-release packaging |
+| `tools/` | Windows build, dev-release packaging, production release signing |
 | `tests/` | Automated checks ([tests/README.md](tests/README.md)) |
 | `docs/` | Guides |
 
+- Day-to-day loop (dev builds, SHA-256 update bundles, no keys): [docs/9-development.md](docs/9-development.md).
 - `tests/local-gates.sh` runs the CI checks locally (add `--docker`, as root, for the real-Docker test).
 - Every pull request runs three checks: **gates**, **Docker end-to-end**, **Windows**.
 - Every merge to `main` runs them again, then publishes a dev release.

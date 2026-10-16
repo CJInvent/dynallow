@@ -14,9 +14,9 @@ marker="-----BEGIN"; kinds="(EC |ENCRYPTED |RSA )?PRIVATE KEY-----"
 while IFS= read -r f; do fail "private key material in $f"; done < <(git grep -lIE -- "${marker} ${kinds}" || true)
 
 # 3. The old product name survives only where it is load-bearing (migration, frozen identifiers).
-allowed='^(README\.md|docs/upgrading\.md|docs/7-troubleshooting\.md|docs/8-native-agents-and-releases\.md|TEST-LEDGER\.md'
+allowed='^(README\.md|docs/upgrading\.md|docs/7-troubleshooting\.md|docs/8-native-agents-and-releases\.md|docs/review-2026-10-16\.md|TEST-LEDGER\.md|tests/README\.md|tests/review_v4\.py|ControlServer/agents/docker/agent\.php'
 allowed+='|ControlServer/src/db\.php|ControlServer/bin/manage\.php|ControlServer/agents/docker/install\.sh|ControlServer/deploy/docker/entrypoint\.sh'
-allowed+='|ControlServer/agents/windows-native/(Program|Crypto|Tray|Install|Native|SelfTest)\.cs|tests/windows-smoke\.ps1|tests/hygiene\.sh)$'
+allowed+='|ControlServer/agents/windows-native/(Program|Crypto|Tray|Install|Native|SelfTest|Profile)\.cs|tests/windows-smoke\.ps1|tests/hygiene\.sh)$'
 while IFS= read -r f; do
   [[ "$f" =~ $allowed ]] || fail "old product name in $f (add it to the allowlist in tests/hygiene.sh only if it is a migration path)"
 done < <(git grep -lIiE 'ipfailover|ip failover' || true)

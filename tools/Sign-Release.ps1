@@ -29,11 +29,9 @@ $manifest = [ordered]@{
     files = @([ordered]@{ name = $name; size = $bytes.Length; sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant() })
 }
 $raw = [Text.Encoding]::UTF8.GetBytes(($manifest | ConvertTo-Json -Depth 5 -Compress))
-# Interactive by default. Automation (the dev-release workflow's throwaway or dev key) may set
-# DYNALLOW_SIGNING_PASSPHRASE instead; never do that for the production key.
-$secret = $null
-if ($env:DYNALLOW_SIGNING_PASSPHRASE) { $plain = $env:DYNALLOW_SIGNING_PASSPHRASE }
-else { $secret = Read-Host 'Offline signing key passphrase' -AsSecureString; $plain = [Net.NetworkCredential]::new('', $secret).Password }
+# Production only, always interactive: development releases are never signed (docs/9-development.md).
+$secret = Read-Host 'Offline signing key passphrase' -AsSecureString
+$plain = [Net.NetworkCredential]::new('', $secret).Password
 $key = [Security.Cryptography.ECDsa]::Create()
 try {
     $key.ImportFromEncryptedPem([IO.File]::ReadAllText((Resolve-Path $PrivateKey)), $plain)
@@ -43,4 +41,4 @@ try {
     $bundle = [ordered]@{ manifest = [Convert]::ToBase64String($raw); signature = [Convert]::ToBase64String($signature); files = $files }
     [IO.File]::WriteAllText([IO.Path]::GetFullPath($OutputFile), ($bundle | ConvertTo-Json -Depth 5 -Compress), [Text.UTF8Encoding]::new($false))
     Write-Host "Signed $Target $Version sequence $Sequence. Upload $OutputFile in the server's Releases page."
-} finally { $key.Dispose(); $plain = $null; if ($secret) { $secret.Dispose() } }
+} finally { $key.Dispose(); $plain = $null; $secret.Dispose() }

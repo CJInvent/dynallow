@@ -37,7 +37,7 @@ what automation can't reach. A CI pass never replaces the manual case.
 | S7 | `manage.php backup`, restore into a fresh folder, start it | Same sites; agents keep checking in | | — |
 | S8 | Allowlist feed over HTTPS | Lists the site IPs; `X-IPF-Signature` present | portable (token scope only) | — |
 | S9 | Restart the container, then reboot the host | Comes back healthy, data intact, no cron banner | e2e (restart) | — |
-| S10 | Releases page fingerprint | Matches the release notes and `release-public.pem` | | — |
+| S10 | Releases page and agent pages on the dev server | **DEVELOPMENT MODE** banner; every agent shows channel `dev-sha256` | e2e (dev) | — |
 
 ## W: Windows agent
 
@@ -55,7 +55,7 @@ what automation can't reach. A CI pass never replaces the manual case.
 | W10 | Site page: Rotate key | Stays green; key ID changes | portable | — |
 | W11 | Block the server for 10+ min, then unblock | Missed-check-in alert, then recovery; queued log entries show on the site page | | — |
 | W12 | Releases: upload `dynallow-update-test-windows-x64-*.json`, push to this agent | Agent reports the new version within one interval and stays green | portable (verify) | — |
-| W13 | Upload an update-test bundle from a **different** dev build | Server refuses it; agents unchanged | e2e (Docker) | — |
+| W13 | Upload an edited copy of the update-test bundle (change one character inside `files`) | Server refuses it; agents unchanged | e2e (Docker) | — |
 | W14 | Site page: Decommission | Service disabled, identity removed, server shows the acknowledgment | e2e (Docker) | — |
 | W15 | `uninstall`, then `install` with no profile | Same identity, no new profile needed | | — |
 | W16 | Microsoft Defender or customer EDR present during install, run and update | No detection, or record what was flagged | | — |
@@ -86,4 +86,5 @@ what automation can't reach. A CI pass never replaces the manual case.
 
 | # | Date | Build | Bed | Tester | Scope | Result | Notes |
 |---|---|---|---|---|---|---|---|
+| 2 | 2026-10-16 | branch `integrate-dev-review` (Astra's dev-channel review merged onto PR #2) | Linux sandbox with Docker | Claude | Portable suite both channels; Docker e2e both channels | PASS: 174 portable checks; Docker e2e dev 27/27, signed 27/27 | CI on PR #2 had found a Windows service crash on the first cycle after provisioning (JSON int/long read); fixed here, Windows re-check is CI's. |
 | 1 | 2026-10-16 | branch `ci-packaging-dev-deploy` (before the first dev release) | Linux sandbox with Docker | Claude | All local gates incl. `--docker` | PASS: 7/7 gates, Docker e2e 25/25, UI 29/29 | No Windows machine: Windows job and all manual cases not run. Packaged server smoke-tested from the tarball. |

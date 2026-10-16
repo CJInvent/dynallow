@@ -71,27 +71,17 @@ The server exposes content-addressed release bundles as public software download
 ## Dev releases (CI)
 
 Every merge to `main` runs the full CI gate set, then `.github/workflows/dev-release.yml` publishes a
-prerelease `v3.1.0-dev.N`:
+prerelease `v3.1.0-dev.N`. Nothing in it is signed ([development workflow](9-development.md)):
 
-- **Server package:** `ControlServer`, stamped as version `3.1.N0`, with the build's `release-public.pem`.
-- **Windows agent:** a Native AOT x64 EXE (`3.1.N0`), smoke-tested on the runner before it is published.
-- **Update-test bundles:** signed one-step-newer releases (`3.1.N1`) for Windows and Docker.
+- **Server package:** `ControlServer` stamped as version `3.1.N0`, with dev mode on in `.env.example`.
+- **Windows agent:** a `-Development` Native AOT x64 EXE (`3.1.N0`, channel `dev-sha256`), smoke-tested on
+  the runner before it is published.
+- **Update-test bundles:** one-step-newer dev releases (`3.1.N1`) for Windows and Docker, made by
+  `tools/New-DevRelease.py`.
 - **`SHA256SUMS`.**
 
-Version numbers grow with N, so every dev build is newer than every earlier one.
-
-The dev signing key is either:
-
-- **A throwaway key (default).** It exists only inside that run. Each dev release is a self-contained
-  set: its server, EXE and update-test bundles trust only each other. Moving a test bed to a newer dev
-  build means installing the new server package and re-running `DynAllow.Agent.exe install` (no profile)
-  on each PC.
-- **A stable dev key.** Make a **separate** key with `New-ReleaseKey.ps1`, then add the private PEM and
-  its passphrase as the repository secrets `DYNALLOW_DEV_SIGNING_KEY` and `DYNALLOW_DEV_SIGNING_PASSPHRASE`.
-  Then dev builds can update each other remotely.
-
-Never give CI the production key. `Sign-Release.ps1` reads `DYNALLOW_SIGNING_PASSPHRASE` only for this
-kind of automation; for production it prompts. Dev EXEs are not Authenticode-signed.
+Version numbers grow with N, so every dev build is newer than every earlier one, and a dev test bed can
+take the next dev build as a remote update. CI never holds a signing key of any kind.
 
 ## Before production
 
@@ -101,7 +91,8 @@ kind of automation; for production it prompts. Dev EXEs are not Authenticode-sig
    rolling back the code does not roll back the data, so test a restore.
 3. Build x64 (and ARM64 if needed) with `Build-Windows.ps1`, then Authenticode-sign and timestamp.
 4. Pass the manual cases in [TEST-LEDGER.md](../TEST-LEDGER.md) on a dev build first, then once more
-   on the signed production build (at least the W and D install, update and recovery cases).
+   on the signed production build (at least the W and D install, update and recovery cases). A dev
+   fleet is never promoted to production: install production builds locally (docs/9).
 5. Canary one Windows and one Docker site before turning on automatic rollout.
 
 ## Logs and operational monitoring

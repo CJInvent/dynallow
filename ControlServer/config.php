@@ -25,10 +25,13 @@ return [
     // In Docker, set DYNALLOW_SECURE_COOKIES=1 instead.
     'secure_cookies' => filter_var(getenv('DYNALLOW_SECURE_COOKIES') ?: '0', FILTER_VALIDATE_BOOLEAN),
 
-    // Public half ONLY, pinned out-of-band. Never store the offline private key here.
-    // Development only: SHA-256 integrity; trust the online server for authenticity.
-    'allow_dev_releases' => false,
-    'release_public_key_file' => __DIR__ . '/release-public.pem',
+    // Development only: accept SHA-256-only release bundles (docs/9-development.md). The integrity
+    // check stays; authenticity rests on this server. Never on a production server.
+    // In Docker, set DYNALLOW_ALLOW_DEV_RELEASES=1 instead.
+    'allow_dev_releases' => filter_var(getenv('DYNALLOW_ALLOW_DEV_RELEASES') ?: '0', FILTER_VALIDATE_BOOLEAN),
+    // Production release trust: the PUBLIC half only, pinned out of band. Never the private key.
+    // In Docker it lives in the read-only ./trust folder (see docker-compose.yml).
+    'release_public_key_file' => getenv('DYNALLOW_RELEASE_KEY_FILE') ?: __DIR__ . '/release-public.pem',
     // Mirror audit events to PHP's error log; forward that log to an external collector.
     'audit_syslog' => true,
 

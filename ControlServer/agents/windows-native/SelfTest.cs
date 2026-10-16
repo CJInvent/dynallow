@@ -35,6 +35,12 @@ internal static class SelfTest
         Reject(() => Updates.Verify(b.ToJsonString(), pem, "windows-x64", 1, "3.0.1"), "version rollback/replay");
         b["files"]!["DynAllow.Agent.exe"] = Crypto.B64(Crypto.U("tampered"));
         Reject(() => Updates.Verify(b.ToJsonString(), pem, "windows-x64", 1, "3.0.0"), "tampered executable");
+        // Accessors must read in-memory nodes (JsonValue<int>) exactly like parsed ones.
+        var mixed = new JsonObject { ["i"] = 300, ["l"] = 5000000000L, ["d"] = 7.0, ["t"] = true, ["one"] = 1, ["str"] = "42", ["n"] = null };
+        var parsed = J.Obj(mixed.ToJsonString());
+        Check(mixed.N("i") == 300 && parsed.N("i") == 300 && mixed.N("l") == 5000000000L && mixed.N("d") == 7 && mixed.N("str") == 42 && mixed.N("n", 9) == 9, "numeric reads tolerate in-memory int/long/double nodes");
+        Check(mixed.B("t") && mixed.B("one") && !mixed.B("n") && parsed.B("one"), "boolean reads tolerate PHP-style 1/0");
+        Check(mixed.S("i") == "300" && mixed.S("str") == "42" && mixed.S("n", "x") == "x", "string reads tolerate numbers");
         if (args.Length > 1) {
             // Contract: a profile minted by the real PHP server must pass the agent's own validator.
             var minted = J.Obj(File.ReadAllText(args[1]));
