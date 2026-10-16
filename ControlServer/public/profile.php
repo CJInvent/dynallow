@@ -57,6 +57,7 @@ switch ($format) {
         $dir = APP_ROOT . '/agents/docker';
         $tpl = (string)file_get_contents("$dir/install.sh");
         $out = strtr($tpl, [
+            '__UPDATE_POLICY_B64__' => base64_encode(json_encode(['allow_dev_releases' => app_config('allow_dev_releases') === true])),
             '__LAUNCHER_B64__' => base64_encode((string)file_get_contents("$dir/launcher.php")),
             '__VERIFIER_B64__' => base64_encode((string)file_get_contents("$dir/release.php")),
             '__RELEASE_PUBLIC_B64__' => base64_encode(release_public_pem()),

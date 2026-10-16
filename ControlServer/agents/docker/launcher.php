@@ -24,8 +24,7 @@ try {
     if (is_file($bundle)) {
         if (filesize($bundle) > RELEASE_MAX_BYTES) throw new RuntimeException('Oversized staged release');
         $json = (string)file_get_contents($bundle);
-        $pem = (string)file_get_contents(__DIR__ . '/release-public.pem');
-        $m = verify_release_bundle($json, $pem);
+        $m = verify_docker_release($json, __DIR__);
         if ($m['target'] !== 'docker' || $m['sequence'] < max($baseSequence, (int)($water['sequence'] ?? 0))) throw new RuntimeException('Staged release rollback/target rejected');
         $fingerprint = hash('sha256', base64_decode(json_decode($json, true)['manifest']));
         if ($m['sequence'] === (int)($water['sequence'] ?? 0) && !hash_equals($water['manifest_hash'] ?? '', $fingerprint)) throw new RuntimeException('Conflicting release at accepted sequence');
@@ -50,6 +49,7 @@ try {
     exit($rc);
 } catch (Throwable $e) {
     // Fail closed; container becomes unhealthy and server missed-check-in alerts fire.
-    fwrite(STDERR, 'RELEASE VERIFICATION FAILED: ' . $e->getMessage() . "\n");
+    // Printable ASCII only: a hostile bundle must not put raw bytes into container logs.
+    fwrite(STDERR, 'RELEASE VERIFICATION FAILED: ' . preg_replace('/[^\x20-\x7e]/', '?', $e->getMessage()) . "\n");
     exit(1);
 }

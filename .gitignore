@@ -22,3 +22,5 @@ artifacts/
 release-private*.pem
 *.encrypted.pem
 ControlServer/release-public.pem
+ControlServer/.env
+ControlServer/trust/

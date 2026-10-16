@@ -15,16 +15,23 @@ return [
     // point of this system, so if a proxy sits in front of Apache and is NOT
     // listed here, every agent will look like it comes from the proxy.
     // IPs or CIDRs, IPv4 or IPv6.
-    'trusted_proxies' => [
+    // In Docker, set DYNALLOW_TRUSTED_PROXIES instead (comma-separated).
+    'trusted_proxies' => array_merge([
         // '10.0.0.5',
         // '192.168.10.0/24',
-    ],
+    ], array_values(array_filter(array_map('trim', explode(',', (string)getenv('DYNALLOW_TRUSTED_PROXIES')))))),
 
     // Session cookie: set true once the site is served over HTTPS (it should be).
-    'secure_cookies' => false,
+    // In Docker, set DYNALLOW_SECURE_COOKIES=1 instead.
+    'secure_cookies' => filter_var(getenv('DYNALLOW_SECURE_COOKIES') ?: '0', FILTER_VALIDATE_BOOLEAN),
 
-    // Public half ONLY, pinned out-of-band. Never store the offline private key here.
-    'release_public_key_file' => __DIR__ . '/release-public.pem',
+    // Development only: accept SHA-256-only release bundles (docs/9-development.md). The integrity
+    // check stays; authenticity rests on this server. Never on a production server.
+    // In Docker, set DYNALLOW_ALLOW_DEV_RELEASES=1 instead.
+    'allow_dev_releases' => filter_var(getenv('DYNALLOW_ALLOW_DEV_RELEASES') ?: '0', FILTER_VALIDATE_BOOLEAN),
+    // Production release trust: the PUBLIC half only, pinned out of band. Never the private key.
+    // In Docker it lives in the read-only ./trust folder (see docker-compose.yml).
+    'release_public_key_file' => getenv('DYNALLOW_RELEASE_KEY_FILE') ?: __DIR__ . '/release-public.pem',
     // Mirror audit events to PHP's error log; forward that log to an external collector.
     'audit_syslog' => true,
 

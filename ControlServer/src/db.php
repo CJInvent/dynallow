@@ -6,6 +6,15 @@ declare(strict_types=1);
  * PRAGMA user_version so upgrades apply automatically on first request.
  */
 
+function db_path(): string
+{
+    $dir = app_config('data_dir');
+    $old = "$dir/ipfailover.sqlite"; $current = "$dir/dynallow.sqlite";
+    if (is_file($old) && is_file($current)) throw new RuntimeException('Both database names exist; stop services and resolve the conflicting databases before startup');
+    // Existing databases keep their on-disk name. SQLite owns its WAL/SHM lifecycle.
+    return is_file($old) ? $old : $current;
+}
+
 function db(): PDO
 {
     static $pdo = null;
@@ -16,19 +25,11 @@ function db(): PDO
     if (!is_dir($dir)) {
         throw new RuntimeException("Data directory $dir does not exist. Run: php bin/manage.php init");
     }
-    // Adopt a database from before the rename (2.x shipped as "IP Failover").
-    if (!is_file("$dir/dynallow.sqlite") && is_file("$dir/ipfailover.sqlite")) {
-        foreach (['', '-wal', '-shm'] as $sfx) {
-            if (is_file("$dir/ipfailover.sqlite$sfx")) {
-                @rename("$dir/ipfailover.sqlite$sfx", "$dir/dynallow.sqlite$sfx"); // a concurrent first request may win
-            }
-        }
-    }
-    $pdo = new PDO('sqlite:' . $dir . '/dynallow.sqlite');
+    $pdo = new PDO('sqlite:' . db_path());
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-    $pdo->exec('PRAGMA journal_mode = WAL');
     $pdo->exec('PRAGMA busy_timeout = 5000');
+    $pdo->exec('PRAGMA journal_mode = WAL');
     $pdo->exec('PRAGMA foreign_keys = ON');
     db_migrate($pdo);
     return $pdo;
@@ -248,6 +249,11 @@ function db_migrations(): array
         // v3: product renamed. Only touches a sender name nobody customised.
         [
             "UPDATE settings SET value = 'DynAllow' WHERE key = 'smtp_from_name' AND value = 'IP Failover'",
+        ],
+        // v4: separate hash-only development updates from production releases.
+        [
+            "ALTER TABLE agents ADD COLUMN update_channel TEXT NOT NULL DEFAULT 'signed'",
+            "ALTER TABLE releases ADD COLUMN channel TEXT NOT NULL DEFAULT 'signed'",
         ],
     ];
 }

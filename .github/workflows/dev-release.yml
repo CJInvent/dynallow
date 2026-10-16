@@ -1,0 +1,117 @@
+name: Dev release
+# Every merge to main (or a manual run) builds a dev prerelease, AFTER the full CI gate set.
+# Dev releases are NOT signed (docs/9-development.md): integrity is SHA-256 (the update channel
+# checks each bundle against the hash the authenticated server offers; SHA256SUMS covers downloads).
+#   dynallow-server-<tag>.tar.gz           control server for Docker Compose, dev mode on
+#   DynAllow.Agent-<ver>-win-x64.zip        Windows agent, development build (dev-sha256 channel)
+#   dynallow-update-test-*.json             one-step-newer dev bundles, for the remote-update tests
+#   SHA256SUMS
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev-release
+  cancel-in-progress: false
+jobs:
+  gates:
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      n: ${{ steps.v.outputs.n }}
+      base: ${{ steps.v.outputs.base }}
+      base_seq: ${{ steps.v.outputs.base_seq }}
+      update: ${{ steps.v.outputs.update }}
+      update_seq: ${{ steps.v.outputs.update_seq }}
+    steps:
+      - id: v
+        # dev build N ships agents as 3.1.N0 (sequence N0) and update-test bundles as 3.1.N1 (N1),
+        # so every later dev build is newer than every earlier one.
+        run: |
+          N=${{ github.run_number }}
+          { echo "n=$N"; echo "tag=v3.1.0-dev.$N"
+            echo "base=3.1.$((N*10))"; echo "base_seq=$((N*10))"
+            echo "update=3.1.$((N*10+1))"; echo "update_seq=$((N*10+1))"; } >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: [gates, version]
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      BASE: ${{ needs.version.outputs.base }}
+      BASE_SEQ: ${{ needs.version.outputs.base_seq }}
+      UPDATE: ${{ needs.version.outputs.update }}
+      UPDATE_SEQ: ${{ needs.version.outputs.update_seq }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build the installable agent (${{ env.BASE }})
+        shell: pwsh
+        run: ./tools/Build-Windows.ps1 -Development -Version $env:BASE -Sequence $env:BASE_SEQ -OutputDirectory "$env:RUNNER_TEMP/base"
+      - name: Build the update-test agent (${{ env.UPDATE }})
+        shell: pwsh
+        run: ./tools/Build-Windows.ps1 -Development -Version $env:UPDATE -Sequence $env:UPDATE_SEQ -OutputDirectory "$env:RUNNER_TEMP/update"
+      - name: Smoke-test the exact executable being published
+        shell: pwsh
+        run: ./tests/windows-smoke.ps1 -Executable "$env:RUNNER_TEMP/base/DynAllow.Agent.exe"
+      - name: Package the Windows update-test bundle (SHA-256 only, no signing)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          python tools/New-DevRelease.py --target windows-x64 --version $env:UPDATE --sequence $env:UPDATE_SEQ --input "$env:RUNNER_TEMP/update/DynAllow.Agent.exe" --output "dist/dynallow-update-test-windows-x64-$env:UPDATE.json"
+          if ($LASTEXITCODE -ne 0) { throw 'packaging failed' }
+          Copy-Item "$env:RUNNER_TEMP/base/DynAllow.Agent.exe", "$env:RUNNER_TEMP/base/DynAllow.Agent.exe.build.json" dist/
+      - uses: actions/upload-artifact@v5
+        with:
+          name: windows-build
+          path: dist/
+          retention-days: 7
+
+  package:
+    needs: [version, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+      N: ${{ needs.version.outputs.n }}
+      BASE: ${{ needs.version.outputs.base }}
+      BASE_SEQ: ${{ needs.version.outputs.base_seq }}
+      UPDATE: ${{ needs.version.outputs.update }}
+      UPDATE_SEQ: ${{ needs.version.outputs.update_seq }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: windows-build
+          path: built
+      - name: Assemble packages
+        run: tools/package-dev-release.sh built out
+      - name: The packaged server starts and serves its login page
+        run: |
+          set -e
+          mkdir smoke && tar -C smoke -xzf "out/dynallow-server-$TAG.tar.gz"
+          cd "smoke/dynallow-server-$TAG"
+          cp .env.example .env
+          printf 'DYNALLOW_HTTP_PORT=18080\nDYNALLOW_PASSWORD=package-smoke-password\n' >> .env
+          docker compose up -d --build
+          for i in $(seq 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' dynallow-server)" = healthy ] && break; sleep 3; done
+          docker inspect -f '{{.State.Health.Status}}' dynallow-server | grep -qx healthy
+          curl -fsS http://127.0.0.1:18080/login.php | grep -q 'DynAllow'
+          docker compose exec -T server php -r 'require "/var/www/dynallow/src/bootstrap.php"; echo APP_VERSION, "\n";' | grep -qx "$BASE"
+          docker compose logs server | grep -q 'DEVELOPMENT server'
+          docker compose down
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" out/*.tar.gz out/*.zip out/*.json out/SHA256SUMS \
+            --target "${{ github.sha }}" --prerelease --title "DynAllow dev build $N ($BASE)" --notes-file out/RELEASE-NOTES.md

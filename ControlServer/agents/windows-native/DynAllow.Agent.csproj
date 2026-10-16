@@ -10,6 +10,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <IsAotCompatible>true</IsAotCompatible>
     <Version>3.0.0</Version>
+    <DefineConstants Condition="'$(DevelopmentUpdates)' == 'true'">$(DefineConstants);DYNALLOW_DEV_UPDATES</DefineConstants>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <DebugType>embedded</DebugType>
   </PropertyGroup>

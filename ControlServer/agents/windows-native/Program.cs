@@ -1,3 +1,5 @@
+// Windows-only product. The portable self-test path touches no Windows APIs, so it still runs on Linux CI.
+[assembly: System.Runtime.Versioning.SupportedOSPlatform("windows")]
 namespace DynAllow;
 internal static class Program
 {

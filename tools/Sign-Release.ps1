@@ -21,6 +21,7 @@ if ($Target -eq 'docker') {
 } else {
     # Build metadata sidecar produced by Build-Windows.ps1. Authenticode-sign the EXE BEFORE running this script.
     $meta = Get-Content -Raw ($InputFile + '.build.json') | ConvertFrom-Json
+    if ($meta.channel -ne 'signed') { throw 'Production signing requires a production build, not a development executable.' }
     if ($meta.version -ne $Version -or $meta.sequence -ne $Sequence -or $meta.target -ne $Target) { throw 'Build metadata does not match release target/version/sequence.' }
 }
 $manifest = [ordered]@{
@@ -28,6 +29,7 @@ $manifest = [ordered]@{
     files = @([ordered]@{ name = $name; size = $bytes.Length; sha256 = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)).ToLowerInvariant() })
 }
 $raw = [Text.Encoding]::UTF8.GetBytes(($manifest | ConvertTo-Json -Depth 5 -Compress))
+# Production only, always interactive: development releases are never signed (docs/9-development.md).
 $secret = Read-Host 'Offline signing key passphrase' -AsSecureString
 $plain = [Net.NetworkCredential]::new('', $secret).Password
 $key = [Security.Cryptography.ECDsa]::Create()

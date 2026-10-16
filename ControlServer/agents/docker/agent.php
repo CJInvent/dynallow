@@ -277,7 +277,7 @@ function consume_profile(?array $state): ?array
         return $state;
     }
     $p = jread($path);
-    if (!$p || ($p['format'] ?? '') !== 'dynallow-provisioning' || empty($p['enroll_token'])) {
+    if (!$p || !in_array($p['format'] ?? '', ['dynallow-provisioning', 'ipfailover-provisioning'], true) || empty($p['enroll_token'])) {
         logline('ERROR', 'provisioning.json is not a valid DynAllow profile; ignored and deleted');
         return $state;
     }
@@ -342,7 +342,7 @@ function run_cycle(array &$state): array
     $base = [
         'agent' => $state['agent_uid'], 'observed_ipv4' => $v4, 'observed_ipv6' => $v6,
         'version' => AGENT_VERSION, 'platform' => 'docker', 'os' => php_uname('s') . ' ' . php_uname('r'),
-        'release_target' => 'docker', 'release_sequence' => RELEASE_SEQUENCE, 'sleep_status' => 'unsupported',
+        'release_target' => 'docker', 'release_sequence' => RELEASE_SEQUENCE, 'update_channel' => docker_development_updates(getenv('DYNALLOW_APP_DIR') ?: '/app') ? 'dev-sha256' : 'signed', 'sleep_status' => 'unsupported',
         'update_status' => $state['update_status'] ?? '', 'logs' => array_slice(jread("$DATA/log-spool.json") ?? [], 0, 20),
         'hostname' => gethostname(), 'key_protector' => 'container-file', 'machine_id' => machine_id(),
     ];
@@ -425,8 +425,7 @@ function apply_update(array $offer, array &$state): void
     $bytes = @file_get_contents(rtrim($state['control_url'], '/') . '/release.php?sha256=' . $hash, false,
         stream_context_create(['http' => ['timeout' => 120, 'follow_location' => 0]]), 0, RELEASE_MAX_BYTES + 1);
     if ($bytes === false || strlen($bytes) !== (int)$offer['size'] || !hash_equals($hash, hash('sha256', $bytes))) throw new RuntimeException('Release download hash/size mismatch');
-    $pem = (string)file_get_contents((getenv('DYNALLOW_APP_DIR') ?: '/app') . '/release-public.pem');
-    $m = verify_release_bundle($bytes, $pem);
+    $m = verify_docker_release($bytes, getenv('DYNALLOW_APP_DIR') ?: '/app');
     $watermark = jread("$DATA/update-state.json") ?? [];
     if ($m['target'] !== 'docker' || $m['sequence'] <= max(RELEASE_SEQUENCE, (int)($watermark['sequence'] ?? 0))
         || version_compare($m['version'], AGENT_VERSION, '<=')) throw new RuntimeException('Release target/version/sequence rejected');
@@ -441,7 +440,7 @@ function apply_update(array $offer, array &$state): void
     } finally { @unlink($tmp); }
     // Atomic bundle publish; immutable launcher verifies it again before every execution.
     jwrite("$DATA/current-release.json", json_decode($bytes, true, 16, JSON_THROW_ON_ERROR));
-    $state['update_status'] = 'Staged signed release ' . $m['version'] . ' sequence ' . $m['sequence'];
+    $state['update_status'] = 'Staged verified release ' . $m['version'] . ' sequence ' . $m['sequence'];
     logline('INFO', $state['update_status']);
     jwrite("$DATA/state.json", $state);
     exit(10);
@@ -487,6 +486,7 @@ function main(bool $once = false): void
     }
     jwrite($statePath, $state);
     $prev = jread("$DATA/status.json") ?? [];
+    if (docker_development_updates(getenv('DYNALLOW_APP_DIR') ?: '/app')) logline('WARN', 'DEVELOPMENT mode: SHA-256 updates trust the online server');
     logline('INFO', 'DynAllow agent ' . AGENT_VERSION . ' for ' . ($state['site_name'] ?? '?') . ' -> ' . $state['control_url']);
 
     while (true) {

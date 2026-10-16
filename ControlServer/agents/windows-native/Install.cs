@@ -62,7 +62,7 @@ internal static class Install
         store.Initialize();
         if (profile is not null) {
             var p = Store.ReadPath(Path.GetFullPath(profile)) ?? throw new FileNotFoundException("Profile missing");
-            if (p.S("format") != "dynallow-provisioning" || p.S("enroll_token") == "") throw new InvalidDataException("Invalid profile");
+            Profile.Validate(p);
             if (store.Read("state.json").B("enrolled") && !reprovision) throw new InvalidOperationException("Already enrolled. Omit --profile to migrate/upgrade existing identity, or use --reprovision deliberately");
         }
         if (reprovision && profile is null) throw new InvalidOperationException("--reprovision requires --profile");

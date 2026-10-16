@@ -2,8 +2,9 @@
 """Portable v3 regression harness. Uses disposable copies, never the live database.
 PHP env: executable path. DOTNET env: SDK host path. Windows SCM/TPM tests are separate.
 """
-import os, pathlib, shutil, subprocess, tempfile, json, urllib.request, urllib.parse, http.cookiejar, re, time, socket
+import sys, os, pathlib, shutil, subprocess, tempfile, json, urllib.request, urllib.parse, http.cookiejar, re, time, socket
 ROOT=pathlib.Path(__file__).resolve().parents[1]
+DEV='--development' in sys.argv
 PHP=os.environ.get('PHP','php'); DOTNET=os.environ.get('DOTNET','dotnet')
 def run(*args,**kw): return subprocess.run(args,check=True,text=True,**kw)
 def check(v,label):
@@ -12,14 +13,20 @@ def check(v,label):
 with tempfile.TemporaryDirectory(prefix='dynallow-v3-') as temp:
     work=pathlib.Path(temp); server=work/'server'
     shutil.copytree(ROOT/'ControlServer',server,ignore=shutil.ignore_patterns('bin','obj','data'))
+    if DEV:
+        cfg=server/'config.php';text,n=re.subn(r"'allow_dev_releases' => [^\n]*,", "'allow_dev_releases' => true,", cfg.read_text())
+        if n!=1: raise AssertionError('could not switch the test server to development mode')
+        cfg.write_text(text)
     # bin/manage.php is real source, not a compiler output.
     shutil.copytree(ROOT/'ControlServer/bin',server/'bin')
     env=os.environ.copy(); env.update(DYNALLOW_ADMIN='admin',DYNALLOW_PASSWORD='test-password-long-enough')
     run(PHP,str(server/'bin/manage.php'),'init',env=env,stdout=subprocess.DEVNULL)
     project=ROOT/'ControlServer/agents/windows-native'
-    run(DOTNET,'build',str(project),'-c','Release','-p:IsAotCompatible=false','--nologo',stdout=subprocess.DEVNULL)
+    run(DOTNET,'build',str(project),'-c','Release','-p:IsAotCompatible=false',f'-p:DevelopmentUpdates={str(DEV).lower()}','--nologo',stdout=subprocess.DEVNULL)
     interop=work/'interop'
-    run(DOTNET,str(project/'bin/Release/net10.0/DynAllow.Agent.dll'),'self-test',str(interop))
+    minted=work/'server-profile.json'
+    run(PHP,str(ROOT/'tests/profile_fixture.php'),str(server),str(minted))
+    run(DOTNET,str(project/'bin/Release/net10.0/DynAllow.Agent.dll'),'self-test',str(interop),str(minted))
     run(PHP,str(ROOT/'tests/security_v3.php'),str(server),str(interop))
     with open(work/'docker-tests.log','w') as f: run(PHP,str(ROOT/'tests/docker_v3.php'),str(server/'agents/docker'),str(work/'docker-data'),stdout=f)
     check('Docker helper tests complete' in (work/'docker-tests.log').read_text(),'Docker helper suite')
@@ -30,7 +37,7 @@ with tempfile.TemporaryDirectory(prefix='dynallow-v3-') as temp:
     run(PHP,str(app/'launcher.php'),'status',env=env2,stdout=subprocess.DEVNULL)
     check(not (work/'UNTRUSTED_EXECUTED').exists(),'Docker ignores legacy writable executable')
     (data/'current-release.json').write_text('{"manifest":"bad","signature":"bad","files":{}}')
-    r=subprocess.run([PHP,str(app/'launcher.php'),'status'],env=env2,capture_output=True,text=True)
+    r=subprocess.run([PHP,str(app/'launcher.php'),'status'],env=env2,capture_output=True,encoding='utf-8',errors='replace')
     check(r.returncode!=0 and 'VERIFICATION FAILED' in r.stderr,'Docker launcher fails closed on untrusted staged update')
     # Real HTTP sessions: admin vs tech, CSRF, log escaping, token scope.
     s=socket.socket();s.bind(('127.0.0.1',0));port=s.getsockname()[1];s.close()
@@ -48,12 +55,23 @@ with tempfile.TemporaryDirectory(prefix='dynallow-v3-') as temp:
         check('Dashboard' in page,'admin login')
         # Full PHP agent/server transport + signed update + restart, without Docker daemon.
         docker_data=work/'docker-http';docker_data.mkdir()
-        run(PHP,str(ROOT/'tests/docker_http_fixture.php'),str(server),base,str(docker_data),str(app))
+        run(PHP,str(ROOT/'tests/docker_http_fixture.php'),str(server),base,str(docker_data),str(app),'development' if DEV else 'signed')
+        installer=post('/profile.php', {'csrf':csrf(get('/agent.php?id='+ (docker_data/'test-agent-id').read_text())), 'id':(docker_data/'test-agent-id').read_text(), 'format':'docker'})
+        import base64
+        def embedded(filename):
+            marker='base64 -d > "$DIR/'+filename+'" <<\'B64\'\n'
+            return base64.b64decode(installer.split(marker,1)[1].split('\nB64',1)[0])
+        policy=json.loads(embedded('app/update-policy.json'))
+        check(policy['allow_dev_releases']==DEV, 'generated Docker installer pins the local update policy')
+        (app/'update-policy.json').write_bytes(embedded('app/update-policy.json'))
+        (docker_data/'provisioning.json').write_bytes(embedded('data/provisioning.json'))
+        check(json.loads((docker_data/'provisioning.json').read_text())['format']=='dynallow-provisioning', 'downloaded provisioning profile uses current product format')
+        if DEV: check(embedded('app/release-public.pem')==b'', 'development installer needs no release public key')
         docker_env=env|{'DATA_DIR':str(docker_data),'DYNALLOW_APP_DIR':str(app)}
         agent_log=open(work/'docker-http.log','w')
         try:
             first=subprocess.run([PHP,str(app/'launcher.php'),'once'],env=docker_env,stdout=agent_log,stderr=agent_log,timeout=100)
-            check(first.returncode==10,'Docker enrolls over HTTP and stages independently signed update')
+            check(first.returncode==10,'Docker enrolls over HTTP and stages '+('SHA-256 development update without a key' if DEV else 'independently signed update'))
             run(PHP,str(app/'launcher.php'),'once',env=docker_env,stdout=agent_log,stderr=agent_log,timeout=100)
             status=json.loads((docker_data/'status.json').read_text())
             check(status['version']=='3.0.1' and status['server_ok'],'Docker restart executes verified release and checks in')
@@ -80,4 +98,4 @@ with tempfile.TemporaryDirectory(prefix='dynallow-v3-') as temp:
         try:post('/logs.php',{'csrf':csrf(page),'ack':1});raise AssertionError('Tech acknowledged')
         except urllib.error.HTTPError as e:check(e.code==403,'diagnostic acknowledgement admin-only')
     finally: proc.terminate();proc.wait(timeout=10);log.close()
-print('ALL PORTABLE V3 TESTS PASSED')
+print('ALL PORTABLE V3 TESTS PASSED ('+('development' if DEV else 'production')+')')

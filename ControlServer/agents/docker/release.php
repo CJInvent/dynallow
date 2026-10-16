@@ -2,7 +2,7 @@
 declare(strict_types=1);
 const RELEASE_MAX_BYTES = 67108864;
 /** Signature covers EXACT manifest bytes; filenames, target, version, sequence, hashes and sizes are bound. */
-function verify_release_bundle(string $json, string $pem): array
+function verify_release_bundle(string $json, string $pem, bool $allowDevelopment = false): array
 {
     if (strlen($json) > RELEASE_MAX_BYTES) throw new RuntimeException('Release bundle exceeds 64 MiB');
     $b = json_decode($json, true, 16, JSON_THROW_ON_ERROR);
@@ -10,10 +10,15 @@ function verify_release_bundle(string $json, string $pem): array
         || !is_string($b['signature'] ?? null) || !is_array($b['files'] ?? null)) throw new RuntimeException('Malformed release bundle');
     $raw = base64_decode($b['manifest'], true);
     $sig = base64_decode($b['signature'], true);
-    if ($raw === false || $sig === false || strlen($sig) > 80
-        || openssl_verify($raw, $sig, $pem, OPENSSL_ALGO_SHA256) !== 1) throw new RuntimeException('Offline release signature is invalid');
+    if ($raw === false || $sig === false || strlen($sig) > 80) throw new RuntimeException('Malformed release encoding');
     $m = json_decode($raw, true, 8, JSON_THROW_ON_ERROR);
-    if (($m['format'] ?? '') !== 'dynallow-release-v1' || !in_array($m['target'] ?? '', ['windows-x64', 'windows-arm64', 'docker'], true)
+    $development = ($m['format'] ?? '') === 'dynallow-dev-release-v1';
+    if ($development) {
+        if (!$allowDevelopment || $sig !== '') throw new RuntimeException('Development release not permitted');
+    } elseif (openssl_verify($raw, $sig, $pem, OPENSSL_ALGO_SHA256) !== 1) {
+        throw new RuntimeException('Offline release signature is invalid');
+    }
+    if ((($m['format'] ?? '') !== 'dynallow-release-v1' && !$development) || !in_array($m['target'] ?? '', ['windows-x64', 'windows-arm64', 'docker'], true)
         || !preg_match('/^[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}$/D', (string)($m['version'] ?? ''))
         || !is_int($m['sequence'] ?? null) || $m['sequence'] < 1 || $m['sequence'] > 2147483647
         || !is_array($m['files'] ?? null)) throw new RuntimeException('Invalid signed manifest');
@@ -25,4 +30,20 @@ function verify_release_bundle(string $json, string $pem): array
             || !preg_match('/^[a-f0-9]{64}$/D', (string)($f['sha256'] ?? '')) || !hash_equals($f['sha256'], hash('sha256', $data))) throw new RuntimeException('Release content hash/size mismatch');
     }
     return $m;
+}
+
+/** Local immutable policy only; no environment/profile/server response may lower this setting. */
+function docker_development_updates(string $app): bool
+{
+    $path = $app . '/update-policy.json';
+    if (!is_file($path)) return false;
+    $policy = json_decode((string)file_get_contents($path), true, 4, JSON_THROW_ON_ERROR);
+    return ($policy['allow_dev_releases'] ?? false) === true;
+}
+function verify_docker_release(string $json, string $app): array
+{
+    $dev = docker_development_updates($app);
+    $key = $app . '/release-public.pem';
+    $pem = is_file($key) ? (string)file_get_contents($key) : '';
+    return verify_release_bundle($json, $pem, $dev);
 }

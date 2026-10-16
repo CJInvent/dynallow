@@ -1,5 +1,7 @@
 # Native agents, diagnostics, and signed updates (v3)
 
+For development, use [SHA-256-only dev releases](9-development.md); no signing key is needed. The key setup below applies to production.
+
 This change replaces the distributed Windows PowerShell launcher with a C# Windows service. The target is a self-contained Native AOT executable: no Python, PowerShell, or separately installed .NET runtime on client machines. Build on Windows with .NET 10 SDK and Visual Studio C++ build tools. Windows x64 and ARM64 are separate release targets. The supplied source compiles and portable protocol tests pass; Windows platform acceptance is still required before customer rollout. No production EXE or production signing key is included.
 
 Authenticode signing and a stable publisher help customers identify the software. They do not guarantee antivirus acceptance. Use ordinary service installation, sign and timestamp the finished executable, submit false positives through vendors' normal channels, and pilot with customer EDR policies. No packer, obfuscation, exclusions, or AV bypass is used. Measure final executable size, idle RSS, startup, and CPU on that pilot; these were not measured in the Linux build environment.
@@ -24,7 +26,7 @@ From the repo root on Windows:
 pwsh -File .\tools\Build-Windows.ps1 -PublicKey E:\DynAllowSigning\release-public.pem -Runtime win-x64 -Version 3.0.0 -Sequence 1 -OutputDirectory artifacts\windows-x64
 ```
 
-Use `win-arm64` for ARM64. Authenticode-sign and timestamp the resulting `DynAllow.Agent.exe` with your organization's certificate. Keep its `.build.json` sidecar for the offline release tool. The build temporarily injects the public anchor, then restores the source; it never requires the private key. Do not run concurrent builds in the same checkout because these inputs are temporarily modified.
+Use `win-arm64` for ARM64. Authenticode-sign and timestamp the resulting `DynAllow.Agent.exe` with your organization's certificate. Keep its `.build.json` sidecar for the offline release tool. The build injects version and public anchor into an isolated temporary source copy; it never requires the private key or modifies the checkout. Use separate output directories for concurrent builds.
 
 For a new site, download its Windows JSON provisioning profile from the server. In an elevated terminal:
 
@@ -65,6 +67,33 @@ Clients independently reject mismatched keys, altered bytes, invalid paths, wron
 Windows stages updates under protected Program Files, uses the already trusted executable as updater, stops the service, swaps the EXE, and requires the new version/sequence to initialize within 45 seconds. Failure restores the previous executable. This is initialization health, not proof that every business function works. The high-water sequence is committed after initialization. A bad signed Docker release fails closed; restore service using a newer signed release supplied locally or explicit administrator recovery. An agent unable to run cannot fetch its own repair. Never delete a watermark merely to work around a rejected network downgrade.
 
 The server exposes content-addressed release bundles as public software downloads; no keys or provisioning secrets belong in these payloads. Configure PHP `upload_max_filesize >= 64M`, `post_max_size >= 70M`, sufficient `memory_limit` (start at 512M for worst-case bundles), and matching reverse-proxy request limits. Maximum payload is 48,000,000 bytes, bundle 64 MiB. Use TLS for the web UI and normal deployments.
+
+## Dev releases (CI)
+
+Every merge to `main` runs the full CI gate set, then `.github/workflows/dev-release.yml` publishes a
+prerelease `v3.1.0-dev.N`. Nothing in it is signed ([development workflow](9-development.md)):
+
+- **Server package:** `ControlServer` stamped as version `3.1.N0`, with dev mode on in `.env.example`.
+- **Windows agent:** a `-Development` Native AOT x64 EXE (`3.1.N0`, channel `dev-sha256`), smoke-tested on
+  the runner before it is published.
+- **Update-test bundles:** one-step-newer dev releases (`3.1.N1`) for Windows and Docker, made by
+  `tools/New-DevRelease.py`.
+- **`SHA256SUMS`.**
+
+Version numbers grow with N, so every dev build is newer than every earlier one, and a dev test bed can
+take the next dev build as a remote update. CI never holds a signing key of any kind.
+
+## Before production
+
+1. Create the production release key offline (above). Install only `release-public.pem` on the server,
+   and confirm its fingerprint against your separate record.
+2. Back up the server (`manage.php backup`), then deploy. Schema migrations run automatically;
+   rolling back the code does not roll back the data, so test a restore.
+3. Build x64 (and ARM64 if needed) with `Build-Windows.ps1`, then Authenticode-sign and timestamp.
+4. Pass the manual cases in [TEST-LEDGER.md](../TEST-LEDGER.md) on a dev build first, then once more
+   on the signed production build (at least the W and D install, update and recovery cases). A dev
+   fleet is never promoted to production: install production builds locally (docs/9).
+5. Canary one Windows and one Docker site before turning on automatic rollout.
 
 ## Logs and operational monitoring
 

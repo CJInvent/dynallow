@@ -6,6 +6,7 @@ require_once dirname(__DIR__) . '/agents/docker/release.php';
 
 function release_public_pem(): string
 {
+    if (app_config('allow_dev_releases') === true && !is_file((string)app_config('release_public_key_file'))) return '';
     $path = app_config('release_public_key_file');
     if (!$path || !is_file($path)) throw new RuntimeException('Offline release public key is not configured. Install release-public.pem out of band.');
     $pem = (string)file_get_contents($path);
@@ -18,7 +19,8 @@ function release_public_pem(): string
 
 function release_store(string $bundle, string $actor): array
 {
-    $m = verify_release_bundle($bundle, release_public_pem());
+    $m = verify_release_bundle($bundle, release_public_pem(), app_config('allow_dev_releases') === true);
+    $channel = $m['format'] === 'dynallow-dev-release-v1' ? 'dev-sha256' : 'signed';
     $hash = hash('sha256', $bundle);
     $dir = app_config('data_dir') . '/releases';
     if (!is_dir($dir) && !mkdir($dir, 0700, true)) throw new RuntimeException('Cannot create releases directory');
@@ -36,10 +38,10 @@ function release_store(string $bundle, string $actor): array
         if ($existing['sha256'] !== $hash) throw new RuntimeException('This target/sequence already has different bytes; use a new sequence');
         return $existing;
     }
-    db_exec('INSERT INTO releases(target, version, sequence, sha256, size, created_at, uploaded_by) VALUES(?,?,?,?,?,?,?)',
-        [$m['target'], $m['version'], $m['sequence'], $hash, strlen($bundle), time(), $actor]);
+    db_exec('INSERT INTO releases(target, version, sequence, sha256, size, created_at, uploaded_by, channel) VALUES(?,?,?,?,?,?,?,?)',
+        [$m['target'], $m['version'], $m['sequence'], $hash, strlen($bundle), time(), $actor, $channel]);
     $r = db_one('SELECT * FROM releases WHERE sha256 = ?', [$hash]);
-    log_event("Offline-signed release uploaded: {$m['target']} {$m['version']} sequence {$m['sequence']} SHA256 $hash", 'info', null, $actor);
+    log_event("Verified $channel release uploaded: {$m['target']} {$m['version']} sequence {$m['sequence']} SHA256 $hash", 'info', null, $actor);
     return $r;
 }
 
@@ -47,8 +49,8 @@ function release_offer(array $agent): ?array
 {
     if (!$agent['release_target'] || $agent['decommission']) return null;
     $r = $agent['update_release_id'] ? db_one('SELECT * FROM releases WHERE id = ?', [$agent['update_release_id']]) :
-        (setting('auto_update') === '1' ? db_one('SELECT * FROM releases WHERE target = ? AND active = 1 ORDER BY sequence DESC LIMIT 1', [$agent['release_target']]) : null);
-    if (!$r || $r['target'] !== $agent['release_target'] || (int)$r['sequence'] <= (int)$agent['release_sequence']
+        (setting('auto_update') === '1' ? db_one('SELECT * FROM releases WHERE target = ? AND channel = ? AND active = 1 ORDER BY sequence DESC LIMIT 1', [$agent['release_target'], $agent['update_channel'] ?? 'signed']) : null);
+    if (!$r || $r['channel'] !== ($agent['update_channel'] ?? 'signed') || ($r['channel'] === 'dev-sha256' && app_config('allow_dev_releases') !== true) || $r['target'] !== $agent['release_target'] || (int)$r['sequence'] <= (int)$agent['release_sequence']
         || version_compare($r['version'], (string)$agent['agent_version'], '<=')) return null;
     return ['sha256' => $r['sha256'], 'size' => (int)$r['size'], 'version' => $r['version'], 'sequence' => (int)$r['sequence']];
 }

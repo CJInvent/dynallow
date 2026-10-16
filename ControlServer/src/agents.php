@@ -352,6 +352,7 @@ function agent_process_checkin(array $agent, array $p, array $ctx): array
     $upd = [
         'release_target'      => in_array($p['release_target'] ?? '', ['windows-x64', 'windows-arm64', 'docker'], true)
             && str_starts_with($p['release_target'], $agent['platform']) ? $p['release_target'] : '',
+        'update_channel'      => ($p['update_channel'] ?? '') === 'dev-sha256' ? 'dev-sha256' : 'signed',
         'release_sequence'    => max(0, (int)($p['release_sequence'] ?? 0)),
         'update_status'       => diagnostic_redact(substr((string)($p['update_status'] ?? ''), 0, 500)),
         'sleep_status'        => substr((string)($p['sleep_status'] ?? 'unsupported'), 0, 80),

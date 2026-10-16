@@ -1,5 +1,7 @@
 # v3 security review and residual risks
 
+The [follow-up review](review-2026-10-16.md) covers subsequent rename fixes and explicit SHA-256-only development mode. The offline-signature guarantees below apply to production mode.
+
 Reviewed the repository snapshot `e9647d89501f5befba2935190f43474c95c09f61` and the v3 changes, focusing on identity lifecycle, trust boundaries, API replay handling, feeds, diagnostics, updates, and administrative routes. This is a targeted source review and regression effort, not an independent penetration test or a claim that every provider/integration is secure.
 
 ## Findings addressed
@@ -34,7 +36,7 @@ Reviewed the repository snapshot `e9647d89501f5befba2935190f43474c95c09f61` and 
 
 ## Validation evidence
 
-`tests/run_v3.py` exercises disposable server/database copies, C# cryptographic fixtures, PHP wire interoperability, identity enrollment/rotation/replay/decommission, offline signature failures, target/downgrade rules, feed scope, log redaction/escaping/deduplication, real HTTP sessions/CSRF/roles, and Docker enrollment/signed-update/restart/tamper rejection. All portable tests pass. The C# project compiles on .NET 10. PHP lint and shell syntax checks are included in the handoff evidence.
+`tests/run_v3.py` exercises disposable server/database copies, C# cryptographic fixtures, PHP wire interoperability, identity enrollment/rotation/replay/decommission, offline signature failures, target/downgrade rules, feed scope, log redaction/escaping/deduplication, real HTTP sessions/CSRF/roles, and Docker enrollment/signed-update/restart/tamper rejection. All portable tests pass. The C# project compiles on .NET 10. PHP lint, shell/Python/PowerShell syntax, repository hygiene, a real-Docker end-to-end run and a Windows service smoke test are CI gates (`tests/README.md`).
 
 Not executed here: Windows Native AOT publish, SCM boot/recovery/ACL tests, real TPM/DPAPI migration and failure modes, multi-session tray, power-policy behavior, Windows signed update rollback under faults, Authenticode verification, customer AV/EDR, ARM64 hardware, actual Docker namespaces/restart behavior, production DNS provider/SMTP integrations. The obsolete combined PowerShell suite was removed; see tests/README.md for coverage not yet ported. Supplied Windows smoke script and CI workflow provide initial gates, but do not cover the entire acceptance matrix. No production release is certified by this package.
 

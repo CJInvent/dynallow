@@ -11,17 +11,19 @@ For pre-IPF1 IPUpdater deployments, create a new server site using the existing 
 Same product, new name. Nothing is re-provisioned and the wire protocol is unchanged,
 so agents keep checking in while you move things over.
 
-- **Control server:** deploy into a fresh folder and carry `data/` and `config.php` across:
+- **Control server:** first take an encrypted backup and stop all workers and cron for this application. Copying live SQLite/WAL files is unsafe. Deploy into a fresh folder and carry `data/` across; merge local settings into the current config template so new options are retained:
 
   ```bash
   sudo mv /var/www/ipfailover /var/www/ipfailover-old
   sudo cp -r ControlServer /var/www/dynallow
   sudo cp -a /var/www/ipfailover-old/data /var/www/dynallow/
-  sudo cp -a /var/www/ipfailover-old/config.php /var/www/dynallow/config.php
-  sudo chown -R www-data:www-data /var/www/dynallow
+  sudoedit /var/www/dynallow/config.php  # merge local settings from the old config
+  sudo chown -R root:www-data /var/www/dynallow
+  sudo chmod -R u=rwX,g=rX,o= /var/www/dynallow
+  sudo chown -R www-data:www-data /var/www/dynallow/data
   ```
 
-  `ipfailover.sqlite` is adopted as `dynallow.sqlite` on first load. Replace the Apache
+  An existing `ipfailover.sqlite` retains its filename; new installs use `dynallow.sqlite`. Startup never renames live SQLite/WAL/SHM files. If both names exist, startup refuses to guess: resolve them offline from verified backups. Replace the Apache
   site with `deploy/apache-dynallow.conf` and the cron file with `deploy/dynallow.cron`
   (delete `/etc/cron.d/ipfailover`), and keep the **same Public URL**. Old `.ipfbak`
   backups still restore. Everyone signs in again once (the session cookie was renamed).
