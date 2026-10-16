@@ -17,8 +17,7 @@ internal sealed class Agent(Store store)
         var state = store.Read("state.json"); var p = store.Read("provisioning.json");
         if (p is null) return state ?? throw new InvalidDataException("Not provisioned");
         if (state.B("enrolled")) { store.Destroy("provisioning.json"); log.Write("warn", "Already enrolled; ignored extra provisioning profile"); return state!; }
-        if (p.S("format") != "ipfailover-provisioning" || p.S("enroll_token") == "" || !Uri.TryCreate(p.S("control_url"), UriKind.Absolute, out var uri) || (uri.Scheme != "http" && uri.Scheme != "https") || uri.UserInfo != "") throw new InvalidDataException("Invalid provisioning profile");
-        using var pub = ECDsa.Create(Crypto.Params(Crypto.B(p.S("server_key"))));
+        Profile.Validate(p);
         state = new JsonObject { ["control_url"] = p.S("control_url"), ["server_key_id"] = p.S("server_key_id"), ["server_key"] = p.S("server_key"), ["agent_uid"] = p.S("agent_uid"), ["site_name"] = p.S("site_name"), ["enroll_token"] = p.S("enroll_token"), ["enrolled"] = false, ["interval"] = 300, ["clock_offset"] = 0, ["ip_check_urls"] = new JsonArray() };
         store.Write("state.json", state); store.Destroy("provisioning.json");
         log.Write("info", "Provisioning profile persisted and consumed"); return state;

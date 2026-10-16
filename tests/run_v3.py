@@ -19,7 +19,9 @@ with tempfile.TemporaryDirectory(prefix='dynallow-v3-') as temp:
     project=ROOT/'ControlServer/agents/windows-native'
     run(DOTNET,'build',str(project),'-c','Release','-p:IsAotCompatible=false','--nologo',stdout=subprocess.DEVNULL)
     interop=work/'interop'
-    run(DOTNET,str(project/'bin/Release/net10.0/DynAllow.Agent.dll'),'self-test',str(interop))
+    minted=work/'server-profile.json'
+    run(PHP,str(ROOT/'tests/profile_fixture.php'),str(server),str(minted))
+    run(DOTNET,str(project/'bin/Release/net10.0/DynAllow.Agent.dll'),'self-test',str(interop),str(minted))
     run(PHP,str(ROOT/'tests/security_v3.php'),str(server),str(interop))
     with open(work/'docker-tests.log','w') as f: run(PHP,str(ROOT/'tests/docker_v3.php'),str(server/'agents/docker'),str(work/'docker-data'),stdout=f)
     check('Docker helper tests complete' in (work/'docker-tests.log').read_text(),'Docker helper suite')

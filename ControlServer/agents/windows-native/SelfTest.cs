@@ -35,6 +35,15 @@ internal static class SelfTest
         Reject(() => Updates.Verify(b.ToJsonString(), pem, "windows-x64", 1, "3.0.1"), "version rollback/replay");
         b["files"]!["DynAllow.Agent.exe"] = Crypto.B64(Crypto.U("tampered"));
         Reject(() => Updates.Verify(b.ToJsonString(), pem, "windows-x64", 1, "3.0.0"), "tampered executable");
+        if (args.Length > 1) {
+            // Contract: a profile minted by the real PHP server must pass the agent's own validator.
+            var minted = J.Obj(File.ReadAllText(args[1]));
+            Check(Profile.Validate(minted).S("format") == Profile.Format, "server-minted provisioning profile accepted by the Windows agent");
+            var wrong = (JsonObject)minted.DeepClone(); wrong["format"] = "ipfailover-provisioning";
+            Reject(() => Profile.Validate(wrong), "profile with a foreign format rejected");
+            var noKey = (JsonObject)minted.DeepClone(); noKey["server_key"] = "AAAA";
+            Reject(() => Profile.Validate(noKey), "profile with an invalid pinned server key rejected");
+        }
         if (args.Length > 0) {
             Directory.CreateDirectory(args[0]);
             File.WriteAllText(Path.Combine(args[0], "csharp-request.json"), body);

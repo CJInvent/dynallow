@@ -32,10 +32,11 @@ internal static class Native
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr CreateEventEx(ref SecurityAttributes attrs, string name, uint flags, uint access);
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] static extern IntPtr OpenEvent(uint access, bool inherit, string name);
     [DllImport("kernel32.dll", SetLastError = true)] static extern bool SetEvent(IntPtr h);
+    // SYSTEM owns it; elevated admins (any logon type: RMM, SSH, CI) and interactive users may signal it.
     const string CheckEvent = "Global\\IPFailoverAgentCheckNow";
     public static EventWaitHandle CreateCheckEvent()
     {
-        if (!ConvertStringSecurityDescriptorToSecurityDescriptor("D:P(A;;GA;;;SY)(A;;0x100002;;;IU)", 1, out var sd, out _)) throw new Win32Exception();
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptor("D:P(A;;GA;;;SY)(A;;0x100002;;;BA)(A;;0x100002;;;IU)", 1, out var sd, out _)) throw new Win32Exception();
         try {
             var sa = new SecurityAttributes { Length = Marshal.SizeOf<SecurityAttributes>(), Descriptor = sd };
             var h = CreateEventEx(ref sa, CheckEvent, 0, 0x1f0003);
