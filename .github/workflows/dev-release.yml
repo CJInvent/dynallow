@@ -1,0 +1,145 @@
+name: Dev release
+# Every merge to main (or a manual run) builds a dev prerelease, AFTER the full CI gate set:
+#   dynallow-server-<tag>.tar.gz           control server, ready for `docker compose up -d --build`
+#   DynAllow.Agent-<ver>-win-x64.zip        Windows agent (Native AOT, dev-signed trust anchor)
+#   dynallow-update-test-*.json             signed one-step-newer releases, for the update tests
+#   SHA256SUMS
+# Signing key: the DYNALLOW_DEV_SIGNING_KEY (+ _PASSPHRASE) repository secrets if set, which keeps
+# one dev trust anchor across builds; otherwise a throwaway key that exists only inside this run.
+# Never put the production key here.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: dev-release
+  cancel-in-progress: false
+jobs:
+  gates:
+    uses: ./.github/workflows/ci.yml
+
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.v.outputs.tag }}
+      n: ${{ steps.v.outputs.n }}
+      base: ${{ steps.v.outputs.base }}
+      base_seq: ${{ steps.v.outputs.base_seq }}
+      update: ${{ steps.v.outputs.update }}
+      update_seq: ${{ steps.v.outputs.update_seq }}
+    steps:
+      - id: v
+        # dev build N ships agents as 3.1.N0 (sequence N0) and update-test bundles as 3.1.N1 (N1),
+        # so every later dev build is newer than every earlier one.
+        run: |
+          N=${{ github.run_number }}
+          { echo "n=$N"; echo "tag=v3.1.0-dev.$N"
+            echo "base=3.1.$((N*10))"; echo "base_seq=$((N*10))"
+            echo "update=3.1.$((N*10+1))"; echo "update_seq=$((N*10+1))"; } >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: [gates, version]
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      BASE: ${{ needs.version.outputs.base }}
+      BASE_SEQ: ${{ needs.version.outputs.base_seq }}
+      UPDATE: ${{ needs.version.outputs.update }}
+      UPDATE_SEQ: ${{ needs.version.outputs.update_seq }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Dev signing key
+        shell: pwsh
+        env:
+          DEV_KEY: ${{ secrets.DYNALLOW_DEV_SIGNING_KEY }}
+          DEV_PASS: ${{ secrets.DYNALLOW_DEV_SIGNING_PASSPHRASE }}
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'keys'; New-Item -ItemType Directory -Force $dir | Out-Null
+          $priv = Join-Path $dir 'signing.encrypted.pem'
+          if ($env:DEV_KEY) {
+            [IO.File]::WriteAllText($priv, $env:DEV_KEY); $pass = $env:DEV_PASS; $mode = 'stable dev key (repository secret)'
+          } else {
+            $pass = [Convert]::ToBase64String([Security.Cryptography.RandomNumberGenerator]::GetBytes(24))
+            $k = [Security.Cryptography.ECDsa]::Create([Security.Cryptography.ECCurve+NamedCurves]::nistP256)
+            $pbe = [Security.Cryptography.PbeParameters]::new([Security.Cryptography.PbeEncryptionAlgorithm]::Aes256Cbc, [Security.Cryptography.HashAlgorithmName]::SHA256, 100000)
+            [IO.File]::WriteAllText($priv, $k.ExportEncryptedPkcs8PrivateKeyPem($pass, $pbe)); $k.Dispose()
+            $mode = 'throwaway key that existed only during this build'
+          }
+          Write-Output "::add-mask::$pass"
+          $k = [Security.Cryptography.ECDsa]::Create(); $k.ImportFromEncryptedPem([IO.File]::ReadAllText($priv), $pass)
+          New-Item -ItemType Directory -Force dist | Out-Null
+          [IO.File]::WriteAllText((Resolve-Path dist).Path + '/release-public.pem', $k.ExportSubjectPublicKeyInfoPem())
+          $fp = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($k.ExportSubjectPublicKeyInfo())).ToLowerInvariant(); $k.Dispose()
+          @{ mode = $mode; fingerprint = $fp } | ConvertTo-Json | Set-Content dist/key-info.json -Encoding utf8NoBOM
+          "DYNALLOW_SIGNING_PASSPHRASE=$pass" >> $env:GITHUB_ENV
+          "SIGNING_KEY=$priv" >> $env:GITHUB_ENV
+          Write-Host "Signing with a $mode. Public key SHA256: $fp"
+      - name: Build the installable agent (${{ env.BASE }})
+        shell: pwsh
+        run: ./tools/Build-Windows.ps1 -PublicKey dist/release-public.pem -Version $env:BASE -Sequence $env:BASE_SEQ -OutputDirectory "$env:RUNNER_TEMP/base"
+      - name: Build the update-test agent (${{ env.UPDATE }})
+        shell: pwsh
+        run: ./tools/Build-Windows.ps1 -PublicKey dist/release-public.pem -Version $env:UPDATE -Sequence $env:UPDATE_SEQ -OutputDirectory "$env:RUNNER_TEMP/update"
+      - name: Smoke-test the exact executable being published
+        shell: pwsh
+        run: ./tests/windows-smoke.ps1 -Executable "$env:RUNNER_TEMP/base/DynAllow.Agent.exe"
+      - name: Sign the update-test bundles (Windows and Docker)
+        shell: pwsh
+        run: |
+          ./tools/Sign-Release.ps1 -Target windows-x64 -Version $env:UPDATE -Sequence $env:UPDATE_SEQ -InputFile "$env:RUNNER_TEMP/update/DynAllow.Agent.exe" -PrivateKey $env:SIGNING_KEY -OutputFile "dist/dynallow-update-test-windows-x64-$env:UPDATE.json"
+          $src = [IO.File]::ReadAllText((Resolve-Path ControlServer/agents/docker/agent.php))
+          $code = $src -replace "const AGENT_VERSION = '[0-9.]+';", "const AGENT_VERSION = '$env:UPDATE';" -replace 'const RELEASE_SEQUENCE = \d+;', "const RELEASE_SEQUENCE = $env:UPDATE_SEQ;"
+          if ($code -eq $src -or $code.Contains("`r")) { throw 'Docker agent stamping failed (or the checkout has CRLF line endings)' }
+          $agent = Join-Path $env:RUNNER_TEMP 'agent.php'; [IO.File]::WriteAllText($agent, $code, [Text.UTF8Encoding]::new($false))
+          ./tools/Sign-Release.ps1 -Target docker -Version $env:UPDATE -Sequence $env:UPDATE_SEQ -InputFile $agent -PrivateKey $env:SIGNING_KEY -OutputFile "dist/dynallow-update-test-docker-$env:UPDATE.json"
+          Copy-Item "$env:RUNNER_TEMP/base/DynAllow.Agent.exe", "$env:RUNNER_TEMP/base/DynAllow.Agent.exe.build.json" dist/
+          Remove-Item $env:SIGNING_KEY
+      - uses: actions/upload-artifact@v5
+        with:
+          name: windows-build
+          path: dist/
+          retention-days: 7
+
+  package:
+    needs: [version, windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
+      N: ${{ needs.version.outputs.n }}
+      BASE: ${{ needs.version.outputs.base }}
+      BASE_SEQ: ${{ needs.version.outputs.base_seq }}
+      UPDATE: ${{ needs.version.outputs.update }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
+        with:
+          name: windows-build
+          path: built
+      - name: Assemble packages
+        run: tools/package-dev-release.sh built out
+      - name: The packaged server starts and serves its login page
+        run: |
+          set -e
+          mkdir smoke && tar -C smoke -xzf "out/dynallow-server-$TAG.tar.gz"
+          cd "smoke/dynallow-server-$TAG"
+          printf 'DYNALLOW_HTTP_PORT=18080\nDYNALLOW_PASSWORD=package-smoke-password\n' > .env
+          docker compose up -d --build
+          for i in $(seq 60); do [ "$(docker inspect -f '{{.State.Health.Status}}' dynallow-server)" = healthy ] && break; sleep 3; done
+          docker inspect -f '{{.State.Health.Status}}' dynallow-server | grep -qx healthy
+          curl -fsS http://127.0.0.1:18080/login.php | grep -q 'DynAllow'
+          docker compose exec -T server php -r 'require "/var/www/dynallow/src/bootstrap.php"; echo APP_VERSION, "\n";' | grep -qx "$BASE"
+          docker compose down
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" out/*.tar.gz out/*.zip out/*.json out/SHA256SUMS \
+            --target "${{ github.sha }}" --prerelease --title "DynAllow dev build $N ($BASE)" --notes-file out/RELEASE-NOTES.md

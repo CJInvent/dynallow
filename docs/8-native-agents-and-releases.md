@@ -66,6 +66,42 @@ Windows stages updates under protected Program Files, uses the already trusted e
 
 The server exposes content-addressed release bundles as public software downloads; no keys or provisioning secrets belong in these payloads. Configure PHP `upload_max_filesize >= 64M`, `post_max_size >= 70M`, sufficient `memory_limit` (start at 512M for worst-case bundles), and matching reverse-proxy request limits. Maximum payload is 48,000,000 bytes, bundle 64 MiB. Use TLS for the web UI and normal deployments.
 
+## Dev releases (CI)
+
+Every merge to `main` runs the full CI gate set, then `.github/workflows/dev-release.yml` publishes a
+prerelease `v3.1.0-dev.N`:
+
+- **Server package:** `ControlServer`, stamped as version `3.1.N0`, with the build's `release-public.pem`.
+- **Windows agent:** a Native AOT x64 EXE (`3.1.N0`), smoke-tested on the runner before it is published.
+- **Update-test bundles:** signed one-step-newer releases (`3.1.N1`) for Windows and Docker.
+- **`SHA256SUMS`.**
+
+Version numbers grow with N, so every dev build is newer than every earlier one.
+
+The dev signing key is either:
+
+- **A throwaway key (default).** It exists only inside that run. Each dev release is a self-contained
+  set: its server, EXE and update-test bundles trust only each other. Moving a test bed to a newer dev
+  build means installing the new server package and re-running `DynAllow.Agent.exe install` (no profile)
+  on each PC.
+- **A stable dev key.** Make a **separate** key with `New-ReleaseKey.ps1`, then add the private PEM and
+  its passphrase as the repository secrets `DYNALLOW_DEV_SIGNING_KEY` and `DYNALLOW_DEV_SIGNING_PASSPHRASE`.
+  Then dev builds can update each other remotely.
+
+Never give CI the production key. `Sign-Release.ps1` reads `DYNALLOW_SIGNING_PASSPHRASE` only for this
+kind of automation; for production it prompts. Dev EXEs are not Authenticode-signed.
+
+## Before production
+
+1. Create the production release key offline (above). Install only `release-public.pem` on the server,
+   and confirm its fingerprint against your separate record.
+2. Back up the server (`manage.php backup`), then deploy. Schema migrations run automatically;
+   rolling back the code does not roll back the data, so test a restore.
+3. Build x64 (and ARM64 if needed) with `Build-Windows.ps1`, then Authenticode-sign and timestamp.
+4. Pass the manual cases in [TEST-LEDGER.md](../TEST-LEDGER.md) on a dev build first, then once more
+   on the signed production build (at least the W and D install, update and recovery cases).
+5. Canary one Windows and one Docker site before turning on automatic rollout.
+
 ## Logs and operational monitoring
 
 **Logs** combines authenticated agent diagnostics and server application diagnostics, with source, agent, severity, text, pagination, and unacknowledged-issue filters. Technicians can read; admins acknowledge. WARN/ERROR entries raise a visible banner until acknowledged or removed by retention. Actor/action audit events retain their existing views, and mutations are mirrored to PHP's configured error log when `audit_syslog` is enabled (despite that configuration name, the sink is PHP `error_log`, not a direct syslog socket).

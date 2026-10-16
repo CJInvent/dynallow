@@ -1,6 +1,11 @@
 # 3. Add a site
 
-First complete the [release trust and build setup](8-native-agents-and-releases.md). Your administrator supplies the Authenticode-signed Windows EXE and installs the offline release public key on the server. Customer machines do not need PowerShell or .NET installed to run the Native AOT agent.
+Where `DynAllow.Agent.exe` comes from:
+
+- **Testing:** the `DynAllow.Agent-…-win-x64.zip` on the newest dev release (see the [README](../README.md#deploy-a-dev-test-environment)).
+- **Customers:** your own Authenticode-signed build, made with your offline release key ([release setup](8-native-agents-and-releases.md)).
+
+The EXE is self-contained: customer PCs need no PowerShell modules or .NET install.
 
 ## In the web UI
 

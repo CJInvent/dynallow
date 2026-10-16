@@ -1,9 +1,43 @@
 # 1. Install the control server (once)
 
-You need: a Debian/Ubuntu Linux server (a VM or LXC is fine) that the sites
-can reach on the internet. About 10 minutes.
+You need: a Linux server (a VM or LXC is fine) that the sites can reach on the internet,
+and a name for it with HTTPS in front (e.g. `ipctl.yourdomain.com`). About 10 minutes.
 
-## Steps
+Pick one:
+
+- **Option A: Docker.** Easiest to run and to upgrade.
+- **Option B: Apache on the host.** No Docker needed.
+
+Both need the **release public key** (`release-public.pem`) from your offline signing
+machine ([docs/8](8-native-agents-and-releases.md)). Without it, Docker installers and signed updates stay off.
+
+## Option A: Docker
+
+1. **Get the files.** Copy the `ControlServer` folder (or a release's `dynallow-server-…tar.gz`,
+   unpacked) to the server, and put `release-public.pem` inside it.
+2. **Settings:**
+
+   ```bash
+   cp .env.example .env
+   nano .env
+   ```
+
+   Set the port, admin name and time zone. If HAProxy/nginx/Caddy sits in front, set
+   `DYNALLOW_TRUSTED_PROXIES` to its IP, and `DYNALLOW_SECURE_COOKIES=1`.
+3. **Start it:**
+
+   ```bash
+   docker compose up -d --build
+   docker compose logs server | grep password   # the admin password, shown once
+   ```
+
+4. **HTTPS:** point your reverse proxy at `http://<server>:<port>`.
+5. Go to step 7 below (**Sign in**). The alert/retry job already runs inside the container,
+   and its log is `docker compose logs server`.
+   Backups: `docker compose exec -u www-data server php bin/manage.php backup /var/www/dynallow/data/backup-$(date +%F).dynbak`,
+   then copy the file off the server.
+
+## Option B: Apache on the host
 
 1. **Install Apache and PHP.**
 
@@ -14,12 +48,14 @@ can reach on the internet. About 10 minutes.
 
    (`openssl` and `sodium` come built into PHP. Nothing else is needed.)
 
-2. **Copy the files.** Put the `ControlServer` folder at `/var/www/dynallow`:
+2. **Copy the files.** Put the `ControlServer` folder at `/var/www/dynallow`, with `release-public.pem` inside it:
 
    ```bash
    sudo cp -r ControlServer /var/www/dynallow
-   sudo chown -R www-data:www-data /var/www/dynallow
+   sudo install -d -o www-data -g www-data -m 750 /var/www/dynallow/data
    ```
+
+   The code stays owned by root: the web server can write only to `data/`.
 
 3. **Create the database and your admin login.** It asks for a username and a password (12+ characters):
 
@@ -69,7 +105,8 @@ can reach on the internet. About 10 minutes.
 
 ## Is a reverse proxy (HAProxy, nginx) in front of Apache?
 
-Open `config.php` and put the proxy's IP in `trusted_proxies`, for example:
+Docker: set `DYNALLOW_TRUSTED_PROXIES` in `.env` and run `docker compose up -d`.
+Apache: open `config.php` and put the proxy's IP in `trusted_proxies`, for example:
 
 ```php
 'trusted_proxies' => ['10.0.0.5'],
@@ -81,6 +118,6 @@ dashboard will show **"IP held"** with a hint pointing here.
 ## Done?
 
 The dashboard has no red banner at the top. (A red "cron job is not running"
-banner means step 6 didn't take.)
+banner means step 6 didn't take. In Docker, read `docker compose logs server`.)
 
 Next: [2. DNS accounts](2-dns-accounts.md)

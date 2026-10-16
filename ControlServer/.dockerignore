@@ -1,0 +1,10 @@
+# Runtime state and local secrets never go into the image.
+data/
+.env
+release-public.pem
+*.dynbak
+# The Windows agent is built separately (tools/Build-Windows.ps1); the server never serves it.
+agents/windows-native/
+Dockerfile
+docker-compose.yml
+.dockerignore

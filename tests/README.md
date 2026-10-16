@@ -1,9 +1,63 @@
 # Tests
 
-Run `bash tests/run_all.sh` from the repository root. Requires Python 3, .NET 10 SDK, and PHP 8.3 CLI with OpenSSL, ctype, sodium, PDO SQLite and SQLite3. Set `PHP` and `DOTNET` to executable paths when needed. Tests use temporary server/database copies, ephemeral keys, and loopback HTTP servers; they do not alter your deployed database.
+One command runs what CI runs, minus the Windows job:
 
-- `run_v3.py`: C# cryptographic self-tests, PHP interoperability and security regressions, authenticated logs, roles/CSRF/feed scope, Docker PHP enrollment, independently signed update, restart and tamper rejection. Runs launcher/agent code without a Docker daemon.
-- `run_ui.py`: login/CSP, settings, SMTP mock delivery, provider account forms/API checks, and site-creation validation. Uses `ui_test.py`, `web.py`, and `mock.py`; stops only processes it starts and uses temporary ports.
-- `windows-smoke.ps1`: elevated, **clean disposable Windows VM only**. Checks native platform crypto/power and service install/start/restart/uninstall. Build with an ephemeral test public key. See `.github/workflows/native-agent.yml`; never distribute its test-key binaries.
+```bash
+tests/local-gates.sh                 # lint, hygiene, portable suite
+sudo tests/local-gates.sh --docker   # ...plus the real-Docker end-to-end test
+```
 
-The removed PowerShell end-to-end suite asserted the obsolete script installer and unsigned-update design; it is not a current acceptance gate. Protocol/update security cases are covered by `run_v3.py`; Windows runtime behavior uses the smoke script and the manual acceptance matrix in `CLAUDE-HANDOFF.md`. Broader provider drift/retry, webhook, backup/restore, and real Docker lifecycle checks from that old combined suite have **not** all been ported. Do not mistake the portable runner for full production acceptance.
+Needs PHP 8.3 CLI (pdo_sqlite, sodium), Python 3 and the .NET 10 SDK. It also uses `pwsh` if
+present (or `PWSH=/path/to/pwsh`). `PHP` and `DOTNET` override those executables.
+It prints **ALL LOCAL GATES PASSED** only when every gate ran; otherwise it names what was skipped.
+Every test works on disposable copies, temporary ports and throwaway keys, never on a deployed server.
+
+## CI checks (`.github/workflows/ci.yml`, every pull request)
+
+| Check | What it proves |
+|---|---|
+| **Lint, hygiene, portable suite** | `local-gates.sh`: PHP/shell/Python/PowerShell syntax, `hygiene.sh`, then `run_all.sh` |
+| **Docker end-to-end** | `docker_e2e.py` on a real Docker host (details below) |
+| **Windows** | Native AOT build with a throwaway key, then `windows-smoke.ps1` on a clean runner |
+
+When a check fails, its reason is also posted as a GitHub annotation on the run, so it can be read
+even when the job log can't.
+
+## The pieces
+
+- `hygiene.sh` fails on any of these:
+  - committed runtime state, credentials or build output;
+  - private key material;
+  - the old product name outside its migration allowlist;
+  - a broken relative link in the docs;
+  - CRLF line endings in shell scripts.
+- `run_v3.py`:
+  - C# build and self-tests;
+  - **contract:** a provisioning profile minted by the real server must pass the Windows agent's own validator;
+  - PHP and C# wire interop;
+  - identity enrollment, rotation, replay and decommission;
+  - rejection of tampered or rolled-back signed releases;
+  - roles, CSRF, feed scope and log escaping;
+  - the Docker agent's enroll, signed update, restart and tamper path, with no Docker daemon.
+- `run_ui.py` (with `ui_test.py`, `web.py`, `mock.py`): login, CSP, settings, SMTP, DNS provider
+  forms against mock APIs, and survey validation.
+- `docker_e2e.py` builds the server image and runs it the way a customer would. A technician flow in
+  the web UI then:
+  - generates and runs the real Docker agent installer;
+  - checks the container is healthy and hardened;
+  - checks the authoritative IP;
+  - rejects a release signed with the wrong key;
+  - uploads and pushes a signed update, then sees the exit-10 restart onto the new code;
+  - checks the launcher refuses tampered bytes after a restart;
+  - checks data survives a server restart;
+  - runs a decommission.
+
+  Run it as root.
+- `windows-smoke.ps1`: **clean, disposable Windows machines only** (it installs and purges the real
+  service). It covers:
+  - platform tests (DPAPI, v2 identity migration, power request);
+  - install, removal of the retired PowerShell agent, and the service consuming the profile;
+  - folder ACLs, check-now, restart, and uninstall `--purge`.
+
+What no automated test can cover (TPM hardware, reboots, multiple signed-in users, customer
+antivirus, real Starlink IP changes) is in [TEST-LEDGER.md](../TEST-LEDGER.md).

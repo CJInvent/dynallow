@@ -5,7 +5,9 @@ Start on the **site's page** in the web page: the status line and the
 
 | You see | It means | Do this |
 |---|---|---|
-| Red banner: **cron job is not running** | No alerts, no retries | Step 6 of the server install: `cp deploy/dynallow.cron /etc/cron.d/dynallow` |
+| Red banner: **cron job is not running** | No alerts, no retries | Apache install: step 6, `cp deploy/dynallow.cron /etc/cron.d/dynallow`. Docker: the job runs in the container; read `docker compose logs server` for `cron run failed`. |
+| Docker server won't start: **release-public.pem is missing** | Docker made an empty folder where the key file should be | Put the public key next to `docker-compose.yml` as `release-public.pem`, delete the empty folder, `docker compose up -d`. |
+| Windows install: **Not a DynAllow provisioning profile** | The `.json` is not a profile from this server version (or not a profile at all) | Download a fresh **Windows profile** from the site page. |
 | **IP held** | Agent and server see different IPs | Two internet links at the site? Set the site's **Trust mode** to *Server-seen only*. A proxy (HAProxy) in front of the server? Add it to `trusted_proxies` in `config.php`. Otherwise someone may be relaying the traffic — investigate. |
 | **Server saw a private address** | The server only sees a LAN/proxy IP | Same as above: `trusted_proxies`. |
 | **Agent could not determine its IPv4** | The site can't reach ipify etc. | Check the site's internet / firewall. Settings → General → IP lookup services. |
@@ -25,7 +27,7 @@ Start on the **site's page** in the web page: the status line and the
 - **Windows:** `C:\ProgramData\IPFailoverAgent\public\agent.log` (or tray → **Open log**)
 - **Docker:** `cd /opt/dynallow-agent && docker compose logs --tail 50`
 - **Docker health:** `docker exec dynallow-agent php /app/launcher.php health`
-- **Server:** the **Logs** and **Activity** pages, and `/var/log/apache2/dynallow-error.log`
+- **Server:** the **Logs** and **Activity** pages, plus `docker compose logs server` (Docker) or `/var/log/apache2/dynallow-error.log` (Apache)
 
 ## Useful commands (server)
 

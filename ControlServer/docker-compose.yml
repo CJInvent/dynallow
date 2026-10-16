@@ -1,0 +1,24 @@
+# DynAllow control server.  Start:  docker compose up -d --build
+# Needs release-public.pem (the PUBLIC release key) next to this file.
+# Settings come from .env (copy .env.example). Data lives in ./data — back it up.
+services:
+  server:
+    build: .
+    image: dynallow-server:local
+    container_name: dynallow-server
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${DYNALLOW_HTTP_PORT:-8080}:80"
+    environment:
+      DYNALLOW_ADMIN: ${DYNALLOW_ADMIN:-admin}
+      DYNALLOW_PASSWORD: ${DYNALLOW_PASSWORD:-}
+      DYNALLOW_TRUSTED_PROXIES: ${DYNALLOW_TRUSTED_PROXIES:-}
+      DYNALLOW_SECURE_COOKIES: ${DYNALLOW_SECURE_COOKIES:-0}
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./data:/var/www/dynallow/data
+      - ./release-public.pem:/var/www/dynallow/release-public.pem:ro
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }

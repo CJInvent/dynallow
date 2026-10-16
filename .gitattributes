@@ -1,0 +1,5 @@
+# Byte-identical checkouts on Linux and Windows runners: the dev release signs agent.php on
+# Windows, and the shell installers must keep LF to run on Linux hosts.
+* text=auto eol=lf
+*.png binary
+*.ico binary

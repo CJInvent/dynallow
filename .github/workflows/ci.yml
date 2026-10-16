@@ -1,0 +1,64 @@
+name: CI
+# Gates for every pull request; the dev-release workflow calls this same file before it builds.
+on:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  gates:
+    name: Lint, hygiene, portable suite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: PHP 8.3 with pdo_sqlite and sodium
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends php8.3-cli php8.3-sqlite3 php8.3-mbstring
+          php -m | grep -qx sodium && php -m | grep -qx pdo_sqlite
+      - name: Local gate set (same script developers run)
+        run: tests/local-gates.sh
+
+  docker-e2e:
+    name: Docker end-to-end (server image, generated installer, signed update)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Server container + real agent container
+        run: |
+          set -o pipefail
+          sudo python3 tests/docker_e2e.py 2>&1 | tee e2e.log || {
+            echo "::error title=Docker end-to-end::$(grep -E 'AssertionError|Error|timed out' e2e.log | tail -5 | sed ':a;N;$!ba;s/\n/%0A/g')"
+            exit 1; }
+
+  windows:
+    name: Windows native agent (AOT build, platform tests, service smoke)
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+      - name: Ephemeral TEST trust anchor (never shipped)
+        shell: pwsh
+        run: |
+          $key = [Security.Cryptography.ECDsa]::Create([Security.Cryptography.ECCurve+NamedCurves]::nistP256)
+          [IO.File]::WriteAllText("$env:RUNNER_TEMP/test-public.pem", $key.ExportSubjectPublicKeyInfoPem())
+          $key.Dispose()
+      - name: Native AOT build + portable self-tests
+        shell: pwsh
+        run: ./tools/Build-Windows.ps1 -PublicKey "$env:RUNNER_TEMP/test-public.pem" -OutputDirectory "$env:RUNNER_TEMP/test-build"
+      - name: Platform tests and service smoke (install, profile consumption, ACLs, check-now, restart, purge)
+        shell: pwsh
+        run: ./tests/windows-smoke.ps1 -Executable "$env:RUNNER_TEMP/test-build/DynAllow.Agent.exe"
+      # Do not publish these binaries: their embedded key is throwaway.
