@@ -48,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'notes' => trim((string)$_POST['notes']), 'interval_sec' => max(60, min(86400, (int)$_POST['interval_sec'])),
                 'missed_threshold' => max(1, min(20, (int)$_POST['missed_threshold'])), 'alert_emails' => implode(', ', parse_emails((string)$_POST['alert_emails'])),
                 'trust_mode' => $trust,
+                'prevent_sleep' => $agent['platform'] === 'windows' && !empty($_POST['prevent_sleep']) ? 1 : 0,
             ];
             $changed = [];
             foreach ($fields as $k => $v) {
@@ -159,7 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         case 'decommission':
             db_update('agents', $id, ['decommission' => 1]);
-            log_event('Decommission ordered: the agent removes its key and scheduled tasks at its next check-in', 'warn', $agent);
+            log_event('Decommission ordered: the agent removes its key and disable its service at its next check-in', 'warn', $agent);
             flash('ok', 'At its next check-in the agent will remove itself. Delete the site afterwards.');
             break;
 
@@ -195,21 +196,21 @@ if (!$agent['pubkey'] || isset($_GET['new'])) {
     if (setting('public_url') === '') {
         echo '<div class="callout">An admin must set Settings → General → Public URL first.</div>';
     } else {
-        echo '<p>Download the installer and run it on the site\'s ' . ($agent['platform'] === 'docker' ? 'Docker host (LXC)' : 'Windows PC')
+        echo '<p>Download the provisioning file for the site\'s ' . ($agent['platform'] === 'docker' ? 'Docker host (LXC)' : 'Windows PC')
             . '. It contains a <b>one-time</b> provisioning profile: it works once, expires in ' . (int)setting('enroll_valid_days')
-            . ' days, and destroys itself after use. Each download issues a new profile and cancels the previous one.</p>';
+            . ' days. Windows uses a separate common signed executable. Each download issues a new profile and cancels the previous one.</p>';
         echo '<form method="post" action="profile.php" class="row">' . csrf_field() . '<input type="hidden" name="id" value="' . $id . '">';
         if ($agent['platform'] === 'docker') {
             echo '<button class="primary" name="format" value="docker">Download Docker installer (.sh)</button>';
         } else {
-            echo '<button class="primary" name="format" value="windows">Download Windows installer (.ps1)</button>';
+            echo '<button class="primary" name="format" value="windows">Download Windows profile (.json)</button>';
         }
         echo '<button name="format" value="json">Profile only (.json)</button></form>'
             . '<p class="small dim">Installing from the bare profile? Get the program files from <a href="download.php">Agent files</a>.</p>';
         if ($agent['platform'] === 'docker') {
-            echo '<h3>Then, in the LXC</h3><ol class="howto"><li>Copy the file to the LXC (WinSCP/scp).</li><li>Run <code>sudo bash ipfailover-' . h($agent['uid']) . '.sh</code></li><li>This page turns green within a minute or two.</li></ol>';
+            echo '<h3>Then, in the LXC</h3><ol class="howto"><li>Copy the file to the LXC (WinSCP/scp).</li><li>Run <code>sudo bash dynallow-' . h($agent['uid']) . '.sh</code></li><li>This page turns green within a minute or two.</li></ol>';
         } else {
-            echo '<h3>Then, on the PC</h3><ol class="howto"><li>Copy the file to the PC.</li><li>Right-click it → <b>Run with PowerShell</b>, and allow it to run as administrator.</li>'
+            echo '<h3>Then, on the PC</h3><ol class="howto"><li>Copy the file to the PC.</li><li>Install the common signed native agent, then run <code>DynAllow.Agent.exe install --profile &quot;path-to-profile.json&quot;</code> from an elevated terminal.</li>'
                 . '<li>A colored dot appears by the clock. This page turns green within a minute or two.</li></ol>';
         }
         if ($agent['enroll_token_hash'] && (int)$agent['enroll_expires_at'] > time()) {
@@ -293,6 +294,8 @@ echo '<div class="cols2">' . field('Site address', input('site_address', $agent[
 echo '<div class="cols2">' . field('Check in', select('interval_sec', interval_options() + [(string)$agent['interval_sec'] => fmt_duration((int)$agent['interval_sec'])], $agent['interval_sec']))
     . field('Email after this many missed check-ins', input('missed_threshold', $agent['missed_threshold'], 'number', ['min' => '1', 'max' => '20'])) . '</div>';
 echo field('Trust mode', select('trust_mode', trust_modes(), $agent['trust_mode']));
+if ($agent['platform'] === 'windows') echo checkbox('prevent_sleep', (bool)$agent['prevent_sleep'], 'Prevent automatic system sleep (display may turn off; default off)');
+echo '<p class="small dim">Reported sleep state: ' . h($agent['sleep_status']) . '</p>';
 echo field('Extra alert emails for this site', input('alert_emails', $agent['alert_emails']), 'Comma-separated. Global recipients (Settings) always get alerts too.');
 echo field('Tags', input('tags', $agent['tags']), 'Comma-separated, e.g. <code>pbx, starlink</code>. Allowlist feeds can filter by tag.');
 echo field('Notes', '<textarea name="notes">' . h($agent['notes']) . '</textarea>');
@@ -328,6 +331,11 @@ if ($isAdmin && $agent['pubkey']) {
 echo '</div>';
 echo '</div>'; // grid
 
+echo '<div class="card"><h2>Agent diagnostics and updates</h2><p><a href="logs.php?source=agent&amp;agent=' . $id . '">View agent logs</a></p>';
+echo '<p>Update: ' . h($agent['update_status'] ?: 'No update reported') . ' · release sequence ' . (int)$agent['release_sequence'] . '</p>';
+if ($agent['pubkey'] && !$agent['release_target']) echo '<p class="callout">Legacy agent: install the signed 3.x build locally to enable protected updates and log upload.</p>';
+if ($isAdmin) echo '<a href="releases.php?agent=' . $id . '">Deploy a signed release to this agent</a>';
+echo '</div>';
 // ---- history + events ----
 echo '<div class="grid"><div class="card"><h2>IP history</h2><div class="tablewrap"><table><thead><tr><th>When</th><th>IP</th><th>Was</th><th>Evidence</th></tr></thead><tbody>';
 foreach (db_all('SELECT * FROM ip_history WHERE agent_id = ? ORDER BY at DESC LIMIT 25', [$id]) as $r) {
@@ -347,7 +355,7 @@ if ($isAdmin) {
         echo action_button('cancel_decommission', 'Cancel decommission', ['id' => $id]);
     } elseif ($agent['pubkey']) {
         echo action_button('decommission', 'Decommission (agent removes itself)', ['id' => $id], 'danger',
-            'At its next check-in the agent will destroy its key and remove its scheduled tasks. Continue?');
+            'At its next check-in the agent will destroy its key and disable its service. Continue?');
     }
     echo '<form method="post" class="inline">' . csrf_field() . '<input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="' . $id . '">'
         . checkbox('remove_records', false, 'also delete its DNS records') . ' <button class="danger" data-confirm="Delete ' . h($agent['name'])

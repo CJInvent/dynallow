@@ -16,7 +16,7 @@ declare(strict_types=1);
  *   status
  *
  * Passwords/passphrases are prompted (hidden). For automation, set
- * IPF_PASSWORD / IPF_PASSPHRASE in the environment instead.
+ * DYNALLOW_PASSWORD / DYNALLOW_PASSPHRASE in the environment instead.
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -59,7 +59,7 @@ function create_user(string $username, string $role): void
     if (!preg_match('/^[A-Za-z0-9._@-]{2,64}$/', $username)) fail('username: 2-64 of letters, digits, . _ @ -');
     if (!in_array($role, ['admin', 'tech'], true)) fail('role must be admin or tech');
     if (db_one('SELECT id FROM users WHERE username = ?', [$username])) fail("user $username already exists");
-    $pass = secret_input('IPF_PASSWORD', "Password for $username (12+ chars): ", 12);
+    $pass = secret_input('DYNALLOW_PASSWORD', "Password for $username (12+ chars): ", 12);
     db_exec('INSERT INTO users(username, name, pass_hash, role, created_at) VALUES(?,?,?,?,?)',
         [$username, $username, password_hash($pass, PASSWORD_DEFAULT), $role, time()]);
     log_event("User $username created ($role) from the command line", 'info', null, 'cli');
@@ -86,11 +86,11 @@ switch ($cmd) {
         server_key_active('sign');
         out('Server agent key: ' . $kex['kid'] . ' (pinned into every provisioning profile)');
         if ((int)db_val('SELECT COUNT(*) FROM users') === 0) {
-            $u = getenv('IPF_ADMIN') ?: prompt('First admin username: ');
+            $u = getenv('DYNALLOW_ADMIN') ?: prompt('First admin username: ');
             create_user($u, 'admin');
         }
-        out('Database ready: ' . $dataDir . '/ipfailover.sqlite');
-        out('Next: point Apache at public/, add the cron line (deploy/ipfailover.cron), log in, set Settings → General → Public URL.');
+        out('Database ready: ' . $dataDir . '/dynallow.sqlite');
+        out('Next: point Apache at public/, add the cron line (deploy/dynallow.cron), log in, set Settings → General → Public URL.');
         break;
 
     case 'create-user':
@@ -100,7 +100,7 @@ switch ($cmd) {
 
     case 'reset-password':
         $u = db_one('SELECT * FROM users WHERE username = ?', [$argv[2] ?? '']) ?? fail('no such user');
-        $pass = secret_input('IPF_PASSWORD', 'New password (12+ chars): ', 12);
+        $pass = secret_input('DYNALLOW_PASSWORD', 'New password (12+ chars): ', 12);
         db_update('users', (int)$u['id'], ['pass_hash' => password_hash($pass, PASSWORD_DEFAULT)]);
         log_event("Password reset for {$u['username']} from the command line", 'warn', null, 'cli');
         out('Password updated.');
@@ -123,20 +123,20 @@ switch ($cmd) {
 
     case 'backup':
         $file = $argv[2] ?? fail('usage: backup <file>');
-        $pass = secret_input('IPF_PASSPHRASE', 'Backup passphrase (16+ chars, store it somewhere safe): ', 16);
-        $tmp = tempnam(sys_get_temp_dir(), 'ipfdb');
+        $pass = secret_input('DYNALLOW_PASSPHRASE', 'Backup passphrase (16+ chars, store it somewhere safe): ', 16);
+        $tmp = tempnam(sys_get_temp_dir(), 'dyndb');
         unlink($tmp);
         db()->exec('VACUUM INTO ' . db()->quote($tmp));
         $payload = json_encode(['secret_key' => trim((string)file_get_contents("$dataDir/secret.key")), 'db' => base64_encode((string)file_get_contents($tmp))]);
         unlink($tmp);
         // Cleartext header so the file is identifiable years later, bound in as
         // AEAD additional data so relabelling it breaks decryption.
-        $header = json_encode(['kind' => 'ipfailover-server-backup', 'app_version' => APP_VERSION, 'created_at' => gmdate('c'), 'host' => gethostname()]);
+        $header = json_encode(['kind' => 'dynallow-server-backup', 'app_version' => APP_VERSION, 'created_at' => gmdate('c'), 'host' => gethostname()]);
         $salt = random_bytes(SODIUM_CRYPTO_PWHASH_SALTBYTES);
         $key = sodium_crypto_pwhash(32, $pass, $salt, SODIUM_CRYPTO_PWHASH_OPSLIMIT_MODERATE, SODIUM_CRYPTO_PWHASH_MEMLIMIT_MODERATE, SODIUM_CRYPTO_PWHASH_ALG_ARGON2ID13);
         $nonce = random_bytes(SODIUM_CRYPTO_AEAD_XCHACHA20POLY1305_IETF_NPUBBYTES);
         $ct = sodium_crypto_aead_xchacha20poly1305_ietf_encrypt($payload, $header, $nonce, $key);
-        file_put_contents($file, 'IPFBAK01' . pack('N', strlen($header)) . $header . $salt . $nonce . $ct);
+        file_put_contents($file, 'DYNBAK01' . pack('N', strlen($header)) . $header . $salt . $nonce . $ct);
         chmod($file, 0600);
         log_event('Encrypted server backup written by CLI', 'info', null, 'cli');
         out("Backup written: $file (" . round(filesize($file) / 1024) . ' KB). Keep the passphrase separately.');
@@ -145,7 +145,8 @@ switch ($cmd) {
     case 'restore':
         $file = $argv[2] ?? fail('usage: restore <file> [--force]');
         $raw = (string)@file_get_contents($file);
-        if (substr($raw, 0, 8) !== 'IPFBAK01') fail('not an IP Failover backup file');
+        // IPFBAK01 = the same format, written before the rename.
+        if (!in_array(substr($raw, 0, 8), ['DYNBAK01', 'IPFBAK01'], true)) fail('not a DynAllow backup file');
         $hlen = unpack('N', substr($raw, 8, 4))[1];
         $header = substr($raw, 12, $hlen);
         $off = 12 + $hlen;
@@ -154,19 +155,19 @@ switch ($cmd) {
         $nonce = substr($raw, $off, SODIUM_CRYPTO_AEAD_XCHACHA20POLY1305_IETF_NPUBBYTES);
         $ct = substr($raw, $off + SODIUM_CRYPTO_AEAD_XCHACHA20POLY1305_IETF_NPUBBYTES);
         out('Backup: ' . $header);
-        if ((is_file("$dataDir/ipfailover.sqlite") || is_file("$dataDir/secret.key")) && !in_array('--force', $argv, true)) {
+        if ((is_file("$dataDir/dynallow.sqlite") || is_file("$dataDir/secret.key")) && !in_array('--force', $argv, true)) {
             fail('data/ already has a database or key; re-run with --force to overwrite');
         }
-        $pass = getenv('IPF_PASSPHRASE') ?: prompt('Backup passphrase: ', true);
+        $pass = getenv('DYNALLOW_PASSPHRASE') ?: prompt('Backup passphrase: ', true);
         $key = sodium_crypto_pwhash(32, $pass, $salt, SODIUM_CRYPTO_PWHASH_OPSLIMIT_MODERATE, SODIUM_CRYPTO_PWHASH_MEMLIMIT_MODERATE, SODIUM_CRYPTO_PWHASH_ALG_ARGON2ID13);
         $plain = sodium_crypto_aead_xchacha20poly1305_ietf_decrypt($ct, $header, $nonce, $key);
         if ($plain === false) fail('wrong passphrase, or the file was altered');
         $p = json_decode($plain, true);
         if (!is_dir($dataDir)) mkdir($dataDir, 0750, true);
-        foreach (['-wal', '-shm', ''] as $sfx) @unlink("$dataDir/ipfailover.sqlite$sfx");
+        foreach (['-wal', '-shm', ''] as $sfx) @unlink("$dataDir/dynallow.sqlite$sfx");
         file_put_contents("$dataDir/secret.key", $p['secret_key'] . "\n");
         chmod("$dataDir/secret.key", 0600);
-        file_put_contents("$dataDir/ipfailover.sqlite", base64_decode($p['db']));
+        file_put_contents("$dataDir/dynallow.sqlite", base64_decode($p['db']));
         out('Restored. Fix ownership if needed: chown -R www-data:www-data ' . $dataDir);
         break;
 

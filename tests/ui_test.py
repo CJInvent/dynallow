@@ -1,4 +1,7 @@
-import sys, re, json, subprocess
+import sys, re, json, subprocess, os
+BASE = os.environ["DYNALLOW_TEST_BASE"]
+MOCK = os.environ["DYNALLOW_TEST_MOCK"]
+SMTP_PORT = os.environ["DYNALLOW_TEST_SMTP_PORT"]
 sys.path.insert(0, sys.argv[1]); from web import Browser, flashes
 S = sys.argv[1]; ok = 0; bad = 0
 def check(cond, msg):
@@ -21,15 +24,15 @@ check(not re.search(r'\son[a-z]+="', t) and "<script>" not in t, "no inline hand
 
 # settings
 c, t, h = b.get("settings.php")
-c, t, h = b.post("settings.php", {"action": "save", "section": "General", "public_url": "http://127.0.0.1:8088", "timezone": "America/Chicago",
-    "default_interval_sec": "60", "default_missed": "2", "ip_check_urls": "http://127.0.0.1:8099/ip", "ip_confirm_checkins": "1"})
+c, t, h = b.post("settings.php", {"action": "save", "section": "General", "public_url": BASE, "timezone": "America/Chicago",
+    "default_interval_sec": "60", "default_missed": "2", "ip_check_urls": MOCK + "/ip", "ip_confirm_checkins": "1"})
 check(("ok", "General settings saved.") in flashes(t), "general settings saved")
 c, t, h = b.post("settings.php", {"action": "save", "section": "General", "public_url": "not a url", "timezone": "America/Chicago",
-    "default_interval_sec": "99999", "default_missed": "2", "ip_check_urls": "http://127.0.0.1:8099/ip", "ip_confirm_checkins": "1"})
+    "default_interval_sec": "99999", "default_missed": "2", "ip_check_urls": MOCK + "/ip", "ip_confirm_checkins": "1"})
 check(any("must start with http" in m for _, m in flashes(t)), "bad public URL rejected")
 check('value="3600"' in t, "out-of-range interval clamped to bound (3600)")
-c, t, h = b.post("settings.php", {"action": "smtp", "smtp_host": "127.0.0.1", "smtp_port": "2525", "smtp_security": "none", "smtp_user": "", "smtp_pass": "", "smtp_from": "ipf@test.local", "smtp_from_name": "IPF"})
-c, t, h = b.post("settings.php", {"action": "save", "section": "Alerts", "alert_emails": "noc@test.local", "notify_ip_change": "1", "dns_fail_alert_after": "2", "mismatch_alert_minutes": "1", "webhook_url": "http://127.0.0.1:8099/hook", "cron_ping_url": ""})
+c, t, h = b.post("settings.php", {"action": "smtp", "smtp_host": "127.0.0.1", "smtp_port": SMTP_PORT, "smtp_security": "none", "smtp_user": "", "smtp_pass": "", "smtp_from": "ipf@test.local", "smtp_from_name": "IPF"})
+c, t, h = b.post("settings.php", {"action": "save", "section": "Alerts", "alert_emails": "noc@test.local", "notify_ip_change": "1", "dns_fail_alert_after": "2", "mismatch_alert_minutes": "1", "webhook_url": MOCK + "/hook", "cron_ping_url": ""})
 c, t, h = b.post("settings.php", {"action": "test_mail"})
 check(any("Test email sent" in m for _, m in flashes(t)), "test email sends via built-in SMTP")
 
@@ -38,9 +41,9 @@ c, t, h = b.get("accounts.php")
 c, t, h = b.post("accounts.php", {"action": "save", "provider": "cloudflare", "name": "DP Cloudflare", "p[cloudflare][api_token]": "cf-good-token", "p[cloudflare][zone_id]": "", "domain": "example.com"})
 check(("ok", "Saved.") in flashes(t), "Cloudflare account added")
 check("cf-good-token" not in t, "Cloudflare token is never rendered back")
-c, t, h = b.post("accounts.php", {"action": "save", "provider": "powerdns", "name": "Our PowerDNS", "p[powerdns][api_url]": "http://127.0.0.1:8099/pdns", "p[powerdns][api_key]": "pdns-key", "p[powerdns][server_id]": "localhost", "p[powerdns][zone]": "", "p[powerdns][notify]": "1", "domain": "example.org"})
+c, t, h = b.post("accounts.php", {"action": "save", "provider": "powerdns", "name": "Our PowerDNS", "p[powerdns][api_url]": MOCK + "/pdns", "p[powerdns][api_key]": "pdns-key", "p[powerdns][server_id]": "localhost", "p[powerdns][zone]": "", "p[powerdns][notify]": "1", "domain": "example.org"})
 check(("ok", "Saved.") in flashes(t), "PowerDNS account added")
-c, t, h = b.post("accounts.php", {"action": "save", "provider": "dyndns2", "name": "No-IP main", "p[dyndns2][preset]": "custom", "p[dyndns2][update_url]": "http://127.0.0.1:8099/nic/update?hostname={hostname}&myip={ip}", "p[dyndns2][username]": "u", "p[dyndns2][password]": "p", "domain": ""})
+c, t, h = b.post("accounts.php", {"action": "save", "provider": "dyndns2", "name": "No-IP main", "p[dyndns2][preset]": "custom", "p[dyndns2][update_url]": MOCK + "/nic/update?hostname={hostname}&myip={ip}", "p[dyndns2][username]": "u", "p[dyndns2][password]": "p", "domain": ""})
 ids = {n: i for n, i in re.findall(r'<tr><td><b>([^<]+)</b>.*?\?edit=(\d+)', t, re.S)}
 check(len(ids) == 3, f"three accounts listed {ids}")
 c, t, h = b.post("accounts.php", {"action": "test", "id": ids["Our PowerDNS"]})
@@ -66,7 +69,7 @@ c, t, h = b.post("survey.php", {"customer": "Smith Dental", "name": "SmithDental
     "alert_emails": "tech@test.local", "tags": "pbx, Starlink", "trust_mode": "agree",
     "targets[0][account_id]": ids["DP Cloudflare"], "targets[0][name_mode]": "random", "targets[0][hostname]": "", "targets[0][ttl]": "120",
     "targets[1][account_id]": ids["Our PowerDNS"], "targets[1][name_mode]": "custom", "targets[1][hostname]": "smith-pbx", "targets[1][ttl]": "60"})
-check("Download Windows installer" in t, "survey creates site and lands on installer download")
+check("Download Windows profile" in t, "survey creates site and offers native Windows profile")
 aid = re.search(r'name="id" value="(\d+)"', t).group(1)
 host_random = re.search(r'<b class="mono">([a-z0-9]{12}\.example\.com)</b>', t)
 check(host_random is not None, f"random Cloudflare name generated ({host_random.group(1) if host_random else None})")

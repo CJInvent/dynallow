@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 /**
  * New-site survey for technicians. Six short steps; the last one creates the
- * site and lands on its page with the installer download. Works without
+ * site and lands on its page with the provisioning download. Works without
  * JavaScript too (all steps on one page).
  */
 require dirname(__DIR__) . '/src/bootstrap.php';
@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             db()->rollBack();
             throw $e;
         }
-        flash('ok', 'Site created. Download the installer below and run it on the site\'s machine.');
+        flash('ok', 'Site created. Download the provisioning profile or Docker installer below.');
         redirect('agent.php?id=' . (int)$agent['id'] . '&new=1');
     }
 }
@@ -146,7 +146,7 @@ echo '<div class="stepnav"><button data-back>Back</button><button class="primary
 
 // 6. Review
 echo '<section class="step"><h2>6. Check and create</h2><table class="kv"><tbody data-review></tbody></table>';
-echo '<p class="dim">After you create the site, you\'ll get a one-file installer for the machine. It works once and expires in ' . (int)setting('enroll_valid_days') . ' days.</p>';
+echo '<p class="dim">After you create the site, download a Windows profile for the signed agent EXE, or a Docker installer. The enrollment credential works once and expires in ' . (int)setting('enroll_valid_days') . ' days.</p>';
 echo '<div class="stepnav"><button data-back>Back</button><button class="primary">Create site</button></div></section>';
 echo '</form>';
 page_footer();

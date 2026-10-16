@@ -1,0 +1,28 @@
+name: Native agent validation
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Create ephemeral TEST trust anchor
+        shell: pwsh
+        run: |
+          $key = [Security.Cryptography.ECDsa]::Create([Security.Cryptography.ECCurve+NamedCurves]::nistP256)
+          [IO.File]::WriteAllText("$env:RUNNER_TEMP/test-public.pem", $key.ExportSubjectPublicKeyInfoPem())
+          $key.Dispose()
+      - name: Compile Native AOT and run crypto tests
+        shell: pwsh
+        run: ./tools/Build-Windows.ps1 -PublicKey "$env:RUNNER_TEMP/test-public.pem" -OutputDirectory "$env:RUNNER_TEMP/test-build"
+      - name: Exercise service install, tray-independent startup, power request and uninstall
+        shell: pwsh
+        run: ./tests/windows-smoke.ps1 -Executable "$env:RUNNER_TEMP/test-build/DynAllow.Agent.exe"
+      # Do not publish these binaries: the embedded key is ephemeral and is NOT the production trust anchor.

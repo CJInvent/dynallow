@@ -1,30 +1,21 @@
 <?php
 declare(strict_types=1);
-
-/**
- * Agent program files, for installing from a bare profile (.json) instead of
- * the one-file installers. These contain no secrets.
- */
 require dirname(__DIR__) . '/src/bootstrap.php';
 require_login();
-$files = [
-    'install.ps1' => 'windows/install.ps1', 'uninstall.ps1' => 'windows/uninstall.ps1', 'run-agent.ps1' => 'windows/run-agent.ps1',
-    'ip-agent.ps1' => 'windows/ip-agent.ps1', 'ip-agent-tray.ps1' => 'windows/ip-agent-tray.ps1',
-    'agent.php' => 'docker/agent.php', 'docker-compose.yml' => 'docker/docker-compose.yml',
-];
-$f = (string)($_GET['f'] ?? '');
-if (!isset($files[$f])) {
-    page_header('Agent files');
-    echo '<h1>Agent files</h1><div class="card"><p>Normally you don\'t need these: the site page gives a one-file installer with everything inside. '
-        . 'Use them to install from a bare <code>.json</code> profile.</p><h3>Windows</h3><ul>';
-    foreach (['install.ps1', 'uninstall.ps1', 'run-agent.ps1', 'ip-agent.ps1', 'ip-agent-tray.ps1'] as $n) echo '<li><a href="?f=' . $n . '">' . $n . '</a></li>';
-    echo '</ul><p class="small">Put all five and the profile (renamed <code>provisioning.json</code>) in one folder and run <code>install.ps1</code> as administrator.</p>'
-        . '<h3>Docker</h3><ul><li><a href="?f=agent.php">agent.php</a></li><li><a href="?f=docker-compose.yml">docker-compose.yml</a></li></ul>'
-        . '<p class="small">Put both in a folder, create <code>data/</code>, put the profile at <code>data/provisioning.json</code>, run <code>docker compose up -d</code>.</p></div>';
-    page_footer();
-    exit;
+$files = ['agent.php'=>'docker/agent.php', 'launcher.php'=>'docker/launcher.php', 'release.php'=>'docker/release.php', 'docker-compose.yml'=>'docker/docker-compose.yml'];
+$f=(string)($_GET['f']??'');
+if ($f==='release-public.pem') {
+    header('Content-Type: application/octet-stream'); header('Content-Disposition: attachment; filename="release-public.pem"'); header('Cache-Control: no-store');
+    echo release_public_pem(); exit;
 }
-header('Content-Type: application/octet-stream');
-header('Content-Disposition: attachment; filename="' . $f . '"');
-header('X-Content-Type-Options: nosniff');
-readfile(APP_ROOT . '/agents/' . $files[$f]);
+if (isset($files[$f])) {
+    header('Content-Type: application/octet-stream'); header('Content-Disposition: attachment; filename="'.$f.'"'); header('X-Content-Type-Options: nosniff');
+    readfile(APP_ROOT.'/agents/'.$files[$f]);exit;
+}
+page_header('Agent files');
+echo '<h1>Agent installation</h1><div class="card"><h2>Windows native service</h2><p>Obtain the common signed <code>DynAllow.Agent.exe</code> from your administrator. Download a one-time JSON profile from the site page, then run in an elevated terminal:</p>'
+    . '<pre>DynAllow.Agent.exe install --profile "C:\\Downloads\\dynallow-agt_....json"</pre><p>To migrate an existing PowerShell installation without changing its identity, run <code>DynAllow.Agent.exe install</code>. The installer retains the existing protected ProgramData identity. Legacy PowerShell executables are no longer distributed here.</p></div>';
+echo '<div class="card"><h2>Docker</h2><p>Use the site page’s generated installer, or create <code>app/</code> and <code>data/</code> beside the Compose file. Place these PHP files and the verified offline public key in <code>app/</code>; place the profile at <code>data/provisioning.json</code>.</p><ul>';
+foreach (array_merge(array_keys($files),['release-public.pem']) as $n) echo '<li><a href="?f='.rawurlencode($n).'">'.h($n).'</a></li>';
+echo '</ul><p>Verify the public-key fingerprint against the offline signing workstation before installation. Keep <code>app/</code> owned by the administrator and mounted read-only. Set <code>data/</code> owner to UID/GID 65534 and mode 700. Run <code>docker compose up -d</code>.</p></div>';
+page_footer();

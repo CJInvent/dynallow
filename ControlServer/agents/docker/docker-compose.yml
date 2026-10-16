@@ -1,14 +1,15 @@
-# IP Failover agent. Stock image, no build step; the agent is one PHP file.
+# DynAllow agent. Stock PHP image with immutable launcher, verifier, and base agent.
 services:
-  ipfailover-agent:
+  dynallow-agent:
     image: php:8.3-cli-alpine
-    container_name: ipfailover-agent
+    container_name: dynallow-agent
     restart: unless-stopped
-    command: ["php", "/app/agent.php"]
+    command: ["php", "/app/launcher.php"]
+    init: true
     environment:
       DATA_DIR: /data
     volumes:
-      - ./agent.php:/app/agent.php:ro
+      - ./app:/app:ro
       - ./data:/data
       # Lets the server notice if this identity is copied to other hardware.
       - /etc/machine-id:/host-machine-id:ro
@@ -18,7 +19,7 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     healthcheck:
-      test: ["CMD", "php", "/app/agent.php", "health"]
+      test: ["CMD", "php", "/app/launcher.php", "health"]
       interval: 60s
       timeout: 20s
       start_period: 90s

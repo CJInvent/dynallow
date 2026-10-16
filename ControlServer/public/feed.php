@@ -33,7 +33,7 @@ $sign = server_key_active('sign');
 if (isset($_GET['pubkey'])) {
     header('Content-Type: application/json');
     echo json_encode(['kid' => $sign['kid'], 'curve' => 'P-256', 'public_key_raw_b64' => $sign['public_key'],
-                      'public_key_pem' => "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode(hex2bin(IPF_SPKI_P256_PREFIX) . base64_decode($sign['public_key'])), 64, "\n") . "-----END PUBLIC KEY-----"]);
+                      'public_key_pem' => "-----BEGIN PUBLIC KEY-----\n" . chunk_split(base64_encode(hex2bin(WIRE_SPKI_P256_PREFIX) . base64_decode($sign['public_key'])), 64, "\n") . "-----END PUBLIC KEY-----"]);
     exit;
 }
 
@@ -67,7 +67,10 @@ if ($allowed) {
 }
 db_exec('UPDATE feed_tokens SET last_used_at = ?, last_used_from = ? WHERE id = ?', [time(), $src, $ft['id']]);
 
-$tag = strtolower(trim((string)($_GET['tag'] ?? $ft['tag_filter'])));
+// A request may narrow a token's scope, never widen it.
+$tokenTag = strtolower(trim((string)$ft['tag_filter']));
+$tag = strtolower(trim((string)($_GET['tag'] ?? $tokenTag)));
+if ($tokenTag !== '' && $tag !== $tokenTag) feed_fail(403, 'This token is restricted to its configured tag.');
 $maxAge = max(1, (int)$ft['max_age_hours']) * 3600;
 $rows = [];
 foreach (db_all("SELECT * FROM agents WHERE enabled = 1 AND decommission = 0 AND current_ipv4 IS NOT NULL ORDER BY name") as $a) {

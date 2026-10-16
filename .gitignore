@@ -3,12 +3,22 @@ ControlServer/data/
 *.sqlite
 *.sqlite-*
 secret.key
-*.ipfbak
+*.dynbak
 # Provisioning profiles and generated installers are one-time credentials
-ipfailover-agt_*.json
-ipfailover-agt_*.sh
-Install-ipfailover-agt_*.ps1
+dynallow-agt_*.json
+dynallow-agt_*.sh
+Install-dynallow-agt_*.ps1
 provisioning.json
 # Tooling
 __pycache__/
 *.pyc
+
+# Native agent build outputs and offline signing secrets
+**/obj/
+**/bin/Debug/
+**/bin/Release/
+artifacts/
+*.pdb
+release-private*.pem
+*.encrypted.pem
+ControlServer/release-public.pem

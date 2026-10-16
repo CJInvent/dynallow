@@ -490,7 +490,7 @@ function dyndns2_push(array $cfg, string $host, string $ip): array
     $url = str_replace(['{hostname}', '{ip}'], [rawurlencode($host), rawurlencode($ip)], $tpl);
     $headers = [
         // No-IP requires an identifying agent with a contact address.
-        'User-Agent' => 'ipfailover-control/' . APP_VERSION . ' ' . (setting('smtp_from') ?: 'admin@localhost'),
+        'User-Agent' => 'dynallow-server/' . APP_VERSION . ' ' . (setting('smtp_from') ?: 'admin@localhost'),
     ];
     if (($cfg['username'] ?? '') !== '') {
         $headers['Authorization'] = 'Basic ' . base64_encode($cfg['username'] . ':' . ($cfg['password'] ?? ''));

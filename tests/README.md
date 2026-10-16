@@ -1,25 +1,9 @@
-# Tests (for developers)
+# Tests
 
-`./run_all.sh` runs everything against a throw-away server, with mock DNS
-providers, a mock SMTP server, the real PowerShell agent and the real Docker
-agent in a real container.
+Run `bash tests/run_all.sh` from the repository root. Requires Python 3, .NET 10 SDK, and PHP 8.3 CLI with OpenSSL, ctype, sodium, PDO SQLite and SQLite3. Set `PHP` and `DOTNET` to executable paths when needed. Tests use temporary server/database copies, ephemeral keys, and loopback HTTP servers; they do not alter your deployed database.
 
-Needs: PHP 8.1+ CLI (sqlite3, openssl, sodium), python3, PowerShell 7 (`pwsh`
-on PATH or `PWSH=/path/to/pwsh`), Docker with the `php:8.3-cli-alpine` image,
-openssl and fuser. Uses ports 8088, 8099, 2525. Work files go to
-`$IPF_TEST_WORK` (default `/tmp/ipf-test`).
+- `run_v3.py`: C# cryptographic self-tests, PHP interoperability and security regressions, authenticated logs, roles/CSRF/feed scope, Docker PHP enrollment, independently signed update, restart and tamper rejection. Runs launcher/agent code without a Docker daemon.
+- `run_ui.py`: login/CSP, settings, SMTP mock delivery, provider account forms/API checks, and site-creation validation. Uses `ui_test.py`, `web.py`, and `mock.py`; stops only processes it starts and uses temporary ports.
+- `windows-smoke.ps1`: elevated, **clean disposable Windows VM only**. Checks native platform crypto/power and service install/start/restart/uninstall. Build with an ephemeral test public key. See `.github/workflows/native-agent.yml`; never distribute its test-key binaries.
 
-- `ui_test.py` — the web UI as a browser would use it (login, settings, DNS accounts, survey).
-- `e2e_test.py` — installers downloaded from the UI; enrollment; relay/replay/tamper/forgery
-  attacks; offline/recovered email; DNS drift and failure; key rotation; manual approval;
-  signed feeds; self-update; server key rotation; roles and 2FA; decommission; cleanup;
-  backup/restore.
-- `sabotage.sh` — breaks one defense on purpose and confirms its test turns red, e.g.
-
-  ```bash
-  ./sabotage.sh "server forgets nonces" "replayed request rejected" src/wire.php \
-    "        db_exec('INSERT INTO seen_nonces(nonce, at) VALUES(?, ?)', [\$nonce, time()]);" "        // off"
-  ```
-
-Under the hood the test router stands in for a reverse proxy (`fake_remote`)
-so tests can choose which address the server "sees".
+The removed PowerShell end-to-end suite asserted the obsolete script installer and unsigned-update design; it is not a current acceptance gate. Protocol/update security cases are covered by `run_v3.py`; Windows runtime behavior uses the smoke script and the manual acceptance matrix in `CLAUDE-HANDOFF.md`. Broader provider drift/retry, webhook, backup/restore, and real Docker lifecycle checks from that old combined suite have **not** all been ported. Do not mistake the portable runner for full production acceptance.

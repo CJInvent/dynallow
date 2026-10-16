@@ -1,65 +1,33 @@
 # 3. Add a site
 
-## In the web page (2 minutes)
+First complete the [release trust and build setup](8-native-agents-and-releases.md). Your administrator supplies the Authenticode-signed Windows EXE and installs the offline release public key on the server. Customer machines do not need PowerShell or .NET installed to run the Native AOT agent.
 
-1. Click **New site**.
-2. Answer the six short steps:
-   - **Site** — customer and a short unique name (e.g. `SmithDental-PBX`).
-   - **Machine** — a Windows PC, or Docker (Linux / Proxmox LXC).
-   - **Internet** — type of connection. Say **Yes** if the site has two internet links.
-   - **DNS name** — pick a DNS account. **Random name** is recommended.
-   - **Alerts** — how often it checks in, and who gets emailed.
-   - **Review** — check it, click **Create site**.
-3. Click **Download … installer**.
+## In the web UI
 
-The installer holds a **one-time** key for this site: it works once, expires
-(14 days by default), and deletes itself after use. Downloading again cancels the old one.
+1. Click **New site** and fill in customer/site, Windows or Docker, connection details, DNS account/name, and alert settings.
+2. Create the site and download **Windows profile (.json)** or **Docker installer (.sh)**.
+3. Transfer the file securely to its intended machine. The embedded enrollment credential expires (14 days by default). Downloading again invalidates an earlier unused credential.
 
-## At the site: Windows PC
+## Windows
 
-1. Copy `Install-ipfailover-agt_xxxx.ps1` to the PC (USB, RMM, file share).
-2. Right-click it → **Run with PowerShell**. Click **Yes** when Windows asks for admin.
-3. Wait for **INSTALLED** (under a minute).
-4. A dot appears by the clock for everyone who signs in:
-   🟢 green = all good · 🔴 red = problem (right-click it) · ⚪ grey = waiting / paused.
+Transfer the common signed `DynAllow.Agent.exe` and the site's profile. In an elevated terminal:
 
-Nothing to install first. It runs from power-on, even when nobody is signed in.
+```powershell
+.\DynAllow.Agent.exe install --profile C:\SecureTransfer\dynallow-agt_xxxx.json
+```
 
-> Domain with "AllSigned" script policy? Run it from an admin PowerShell instead:
-> `powershell -ExecutionPolicy Bypass -File .\Install-ipfailover-agt_xxxx.ps1`
+The installer persists the profile and deletes the transferred copy. The `DynAllowAgent` service starts at boot without a user login. The tray starts at user sign-in; run `DynAllow.Agent.exe tray` to show it immediately. Green means healthy, red indicates a problem, and grey means waiting/paused. Use `--no-tray` for headless installations. Runtime service and identity details are in the [deployment guide](8-native-agents-and-releases.md).
 
-## At the site: Docker / Proxmox LXC
+## Docker
 
-**Only once per LXC — get Docker working:**
+Use a supported Docker Engine and Compose installation on the host. For Proxmox LXC, ensure the host/container configuration supports Docker; do not enable privileged mode merely to suppress an unexplained error.
 
-1. In Proxmox: click the LXC → **Options → Features** → tick **nesting** and **keyctl** → restart the LXC.
-2. In the LXC (Debian 12/13 — paste the whole block):
+```bash
+sudo sh dynallow-agt_xxxx.sh
+```
 
-   ```bash
-   apt update && apt install -y ca-certificates curl
-   install -m 0755 -d /etc/apt/keyrings
-   curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-   echo "deb [signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
-   apt update && apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-   ```
+The installer lays out a read-only application and trust anchor, preserves a writable identity volume, starts the container, and deletes itself. Check `docker ps` and the site's web page. For an existing installation, use `--upgrade` to preserve enrollment or `--reprovision` only to replace it deliberately.
 
-   (If `docker run hello-world` fails, make the LXC **privileged** in Proxmox and try again.)
+## Verify
 
-**Install the agent:**
-
-1. Copy `ipfailover-agt_xxxx.sh` into the LXC (WinSCP / scp).
-2. Run:
-
-   ```bash
-   sudo sh ipfailover-agt_xxxx.sh
-   ```
-
-3. Wait for **INSTALLED**. Check any time with `docker ps` — look for **(healthy)**.
-
-## Then
-
-The site's page turns green within a minute or two. If a DNS name was chosen,
-it's already pointing at the site.
-
-**For the FreePBX/Sangoma firewall:** add the site's DNS name (not its IP) to
-the trusted Networks list. Or use an [allowlist feed](5-allowlist-feeds.md).
+Confirm a successful check-in, expected IP, DNS targets, and log entries in the web UI. If needed, use the site DNS name or an [allowlist feed](5-allowlist-feeds.md) in your firewall. Enable automatic-sleep prevention only on Windows sites that need it; it defaults off.

@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /**
- * Runs every minute (deploy/ipfailover.cron). Alerts, retries and checks
+ * Runs every minute (deploy/dynallow.cron). Alerts, retries and checks
  * depend on it — the dashboard shows a red banner if it stops.
  *
  *   1. Missed check-ins  -> OFFLINE email after the agent's threshold (default 2)
@@ -77,7 +77,7 @@ foreach ($rows as $t) {
 // ---- 4. DNS drift ---------------------------------------------------------------
 $every = max(5, (int)setting('verify_minutes')) * 60;
 $rows = db_all("SELECT t.* FROM dns_targets t JOIN agents a ON a.id = t.agent_id
-                WHERE t.enabled = 1 AND t.state = 'ok' AND a.enabled = 1 AND a.current_ipv4 IS NOT NULL
+                WHERE t.enabled = 1 AND t.state = 'ok' AND a.enabled = 1 AND a.decommission = 0 AND a.current_ipv4 IS NOT NULL
                   AND COALESCE(t.last_verified_at, 0) < ? ORDER BY t.last_verified_at LIMIT 50", [$now - $every]);
 foreach ($rows as $t) {
     $agent = agent_get((int)$t['agent_id']);
@@ -93,9 +93,9 @@ foreach ($rows as $t) {
     }
     if ($look['ip'] !== $agent['current_ipv4']) {
         log_event("DNS DRIFT on {$t['hostname']}: provider shows " . ($look['ip'] ?: 'nothing') . ", should be {$agent['current_ipv4']} — re-pushing", 'warn', $agent, 'cron');
-        notify("DNS DRIFT: {$t['hostname']} was changed outside IP Failover",
+        notify("DNS DRIFT: {$t['hostname']} was changed outside DynAllow",
             "The record {$t['hostname']} ({$account['name']}) shows " . ($look['ip'] ?: 'no address') . " but agent {$agent['name']}'s verified IP is {$agent['current_ipv4']}.\n\n"
-            . "Someone or something changed it at the provider. IP Failover is putting it back. If that change was intentional, disable this DNS target first.", $agent);
+            . "Someone or something changed it at the provider. DynAllow is putting it back. If that change was intentional, disable this DNS target first.", $agent);
         db_update('dns_targets', (int)$t['id'], ['state' => 'pending']);
         $t = db_one('SELECT * FROM dns_targets WHERE id = ?', [$t['id']]);
         dns_sync_target($t, $agent, true);
@@ -104,6 +104,7 @@ foreach ($rows as $t) {
 }
 
 // ---- 5. housekeeping ------------------------------------------------------------
+db_exec('DELETE FROM diagnostics WHERE at < ?', [$now - max(7, (int)setting('event_retention_days')) * 86400]);
 db_exec('DELETE FROM events WHERE at < ?', [$now - max(7, (int)setting('event_retention_days')) * 86400]);
 db_exec('DELETE FROM seen_nonces WHERE at < ?', [$now - 2 * max(60, (int)setting('clock_skew_sec')) - 60]);
 db_exec('DELETE FROM login_attempts WHERE at < ?', [$now - 86400]);

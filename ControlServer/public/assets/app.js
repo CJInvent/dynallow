@@ -1,4 +1,4 @@
-// IP Failover — all page behaviour. Attached via data-* attributes; there are
+// DynAllow — all page behaviour. Attached via data-* attributes; there are
 // no inline handlers anywhere (the CSP forbids them and would drop them silently).
 (function () {
   'use strict';
