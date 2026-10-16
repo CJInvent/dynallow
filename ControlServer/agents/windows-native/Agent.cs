@@ -81,7 +81,7 @@ internal sealed class Agent(Store store)
         await Task.WhenAll(ipv4, ipv6);
         var batch = log.Batch();
         var request = new JsonObject { ["agent"] = state.S("agent_uid"), ["observed_ipv4"] = ipv4.Result, ["observed_ipv6"] = ipv6.Result,
-            ["version"] = BuildInfo.Version, ["platform"] = "windows", ["release_target"] = Target, ["release_sequence"] = BuildInfo.Sequence,
+            ["version"] = BuildInfo.Version, ["platform"] = "windows", ["release_target"] = Target, ["release_sequence"] = BuildInfo.Sequence, ["update_channel"] = BuildInfo.UpdateChannel,
             ["os"] = RuntimeInformation.OSDescription, ["hostname"] = Environment.MachineName, ["machine_id"] = MachineId(),
             ["key_protector"] = identity.Protector, ["logs"] = batch.Copy(), ["sleep_status"] = sleep.Status, ["update_status"] = state.S("update_status") };
         string slot = keys["pending"] is not null && state.B("rotation_sent") ? "pending" : "active";
@@ -133,6 +133,7 @@ internal sealed class Agent(Store store)
         var state = ConsumeProfile(); var identity = new Identity(store, log);
         identity.Load();
         if (state.B("prevent_sleep")) try { sleep.Set(true); } catch (Exception e) { log.Write("error", "Sleep prevention restore failed: " + e.Message); }
+        if (BuildInfo.DevelopmentUpdates) log.Write("warn", "DEVELOPMENT build: SHA-256 updates trust the online server; no offline signature required");
         log.Write("info", "DynAllow " + BuildInfo.Version + " started; " + identity.Protector + " identity protection");
         store.Write("startup.json", new JsonObject { ["version"] = BuildInfo.Version, ["sequence"] = BuildInfo.Sequence, ["at"] = Now });
         var previous = Store.ReadPath(Path.Combine(store.Public, "status.json")) ?? new JsonObject();
@@ -145,7 +146,7 @@ internal sealed class Agent(Store store)
                 store.Write("state.json", state);
                 bool ok = error is null && response.B("ok");
                 var status = new JsonObject { ["agent_uid"] = state.S("agent_uid"), ["site"] = state.S("site_name"), ["updated_at"] = Now, ["version"] = BuildInfo.Version,
-                    ["interval"] = state.N("interval", 300), ["server_ok"] = ok, ["key_protector"] = identity.Protector, ["sleep_status"] = sleep.Status,
+                    ["update_channel"] = BuildInfo.UpdateChannel, ["interval"] = state.N("interval", 300), ["server_ok"] = ok, ["key_protector"] = identity.Protector, ["sleep_status"] = sleep.Status,
                     ["update_status"] = state.S("update_status"), ["server_error"] = ok ? null : error ?? response.S("error") + ": " + response.S("message") };
                 if (ok) {
                     status["last_success_at"] = Now; status["ip"] = response["ip"].Copy(); status["targets"] = response["targets"].Copy(); status["enabled"] = response["agent"]?["enabled"].Copy();

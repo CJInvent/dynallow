@@ -23,8 +23,21 @@ docker info >/dev/null 2>&1 || fail "Docker is installed but not running, or thi
 
 # Releases before the rename installed into /opt/ipfailover-agent. Its identity
 # counts as this host's existing state; it is moved, never copied or left behind.
-LEGACY=/opt/ipfailover-agent
+LEGACY="${DYNALLOW_LEGACY_DIR:-/opt/ipfailover-agent}"
 [ "$LEGACY" = "$DIR" ] && LEGACY=""
+# Reject ambiguous/nested paths before destructive migration or stopping containers.
+for d in "$DIR" ${LEGACY:+"$LEGACY"}; do
+    case "$d" in /*) ;; *) fail "installation paths must be absolute" ;; esac
+    case "$d/" in *"/../"*|*"/./"*|"/"|"//") fail "unsafe installation path" ;; esac
+    [ "$d" != /opt ] && [ "$d" != /var ] || fail "installation path must name an application directory"
+done
+if [ -n "$LEGACY" ]; then
+    case "$DIR/" in "$LEGACY/"*) fail "new path is nested inside the legacy path" ;; esac
+    case "$LEGACY/" in "$DIR/"*) fail "legacy path is nested inside the new path" ;; esac
+    if [ -f "$DIR/data/state.json" ] && [ -f "$LEGACY/data/state.json" ]; then
+        fail "two identities exist; resolve them locally before upgrading (neither was changed)"
+    fi
+fi
 STATE="$DIR/data/state.json"
 if [ -n "$LEGACY" ] && [ ! -f "$STATE" ] && [ -f "$LEGACY/data/state.json" ]; then STATE="$LEGACY/data/state.json"; fi
 
@@ -46,8 +59,9 @@ done
 # ===== From here on the install is going ahead. =====
 
 if [ -n "$LEGACY" ] && [ -d "$LEGACY" ]; then
-    (cd "$LEGACY" && docker compose down 2>/dev/null) || true
-    docker rm -f ipfailover-agent >/dev/null 2>&1 || true
+    if [ -f "$LEGACY/docker-compose.yml" ]; then (cd "$LEGACY" && docker compose down); fi
+    # A failed stop must abort before moving live identity files.
+    if docker inspect ipfailover-agent >/dev/null 2>&1; then docker rm -f ipfailover-agent >/dev/null; fi
     if [ "${1:-}" = "--upgrade" ] && [ ! -f "$DIR/data/state.json" ]; then
         mkdir -p "$DIR/data"
         # Identity and state only: v2's unsigned staged agent.php is left behind on purpose.
@@ -81,6 +95,9 @@ __LAUNCHER_B64__
 B64
 base64 -d > "$DIR/app/release.php" <<'B64'
 __VERIFIER_B64__
+B64
+base64 -d > "$DIR/app/update-policy.json" <<'B64'
+__UPDATE_POLICY_B64__
 B64
 base64 -d > "$DIR/app/release-public.pem" <<'B64'
 __RELEASE_PUBLIC_B64__

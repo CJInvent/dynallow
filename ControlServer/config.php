@@ -26,6 +26,8 @@ return [
     'secure_cookies' => filter_var(getenv('DYNALLOW_SECURE_COOKIES') ?: '0', FILTER_VALIDATE_BOOLEAN),
 
     // Public half ONLY, pinned out-of-band. Never store the offline private key here.
+    // Development only: SHA-256 integrity; trust the online server for authenticity.
+    'allow_dev_releases' => false,
     'release_public_key_file' => __DIR__ . '/release-public.pem',
     // Mirror audit events to PHP's error log; forward that log to an external collector.
     'audit_syslog' => true,

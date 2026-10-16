@@ -1,5 +1,7 @@
 # v3 security review and residual risks
 
+The [follow-up review](review-2026-10-16.md) covers subsequent rename fixes and explicit SHA-256-only development mode. The offline-signature guarantees below apply to production mode.
+
 Reviewed the repository snapshot `e9647d89501f5befba2935190f43474c95c09f61` and the v3 changes, focusing on identity lifecycle, trust boundaries, API replay handling, feeds, diagnostics, updates, and administrative routes. This is a targeted source review and regression effort, not an independent penetration test or a claim that every provider/integration is secure.
 
 ## Findings addressed

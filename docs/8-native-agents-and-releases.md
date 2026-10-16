@@ -1,5 +1,7 @@
 # Native agents, diagnostics, and signed updates (v3)
 
+For development, use [SHA-256-only dev releases](9-development.md); no signing key is needed. The key setup below applies to production.
+
 This change replaces the distributed Windows PowerShell launcher with a C# Windows service. The target is a self-contained Native AOT executable: no Python, PowerShell, or separately installed .NET runtime on client machines. Build on Windows with .NET 10 SDK and Visual Studio C++ build tools. Windows x64 and ARM64 are separate release targets. The supplied source compiles and portable protocol tests pass; Windows platform acceptance is still required before customer rollout. No production EXE or production signing key is included.
 
 Authenticode signing and a stable publisher help customers identify the software. They do not guarantee antivirus acceptance. Use ordinary service installation, sign and timestamp the finished executable, submit false positives through vendors' normal channels, and pilot with customer EDR policies. No packer, obfuscation, exclusions, or AV bypass is used. Measure final executable size, idle RSS, startup, and CPU on that pilot; these were not measured in the Linux build environment.
@@ -24,7 +26,7 @@ From the repo root on Windows:
 pwsh -File .\tools\Build-Windows.ps1 -PublicKey E:\DynAllowSigning\release-public.pem -Runtime win-x64 -Version 3.0.0 -Sequence 1 -OutputDirectory artifacts\windows-x64
 ```
 
-Use `win-arm64` for ARM64. Authenticode-sign and timestamp the resulting `DynAllow.Agent.exe` with your organization's certificate. Keep its `.build.json` sidecar for the offline release tool. The build temporarily injects the public anchor, then restores the source; it never requires the private key. Do not run concurrent builds in the same checkout because these inputs are temporarily modified.
+Use `win-arm64` for ARM64. Authenticode-sign and timestamp the resulting `DynAllow.Agent.exe` with your organization's certificate. Keep its `.build.json` sidecar for the offline release tool. The build injects version and public anchor into an isolated temporary source copy; it never requires the private key or modifies the checkout. Use separate output directories for concurrent builds.
 
 For a new site, download its Windows JSON provisioning profile from the server. In an elevated terminal:
 

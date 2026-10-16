@@ -21,6 +21,7 @@ if ($Target -eq 'docker') {
 } else {
     # Build metadata sidecar produced by Build-Windows.ps1. Authenticode-sign the EXE BEFORE running this script.
     $meta = Get-Content -Raw ($InputFile + '.build.json') | ConvertFrom-Json
+    if ($meta.channel -ne 'signed') { throw 'Production signing requires a production build, not a development executable.' }
     if ($meta.version -ne $Version -or $meta.sequence -ne $Sequence -or $meta.target -ne $Target) { throw 'Build metadata does not match release target/version/sequence.' }
 }
 $manifest = [ordered]@{

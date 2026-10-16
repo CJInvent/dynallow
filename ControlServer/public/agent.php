@@ -332,6 +332,7 @@ echo '</div>';
 echo '</div>'; // grid
 
 echo '<div class="card"><h2>Agent diagnostics and updates</h2><p><a href="logs.php?source=agent&amp;agent=' . $id . '">View agent logs</a></p>';
+echo '<p>Update channel: ' . h($agent['update_channel']) . '</p>';
 echo '<p>Update: ' . h($agent['update_status'] ?: 'No update reported') . ' · release sequence ' . (int)$agent['release_sequence'] . '</p>';
 if ($agent['pubkey'] && !$agent['release_target']) echo '<p class="callout">Legacy agent: install the signed 3.x build locally to enable protected updates and log upload.</p>';
 if ($isAdmin) echo '<a href="releases.php?agent=' . $id . '">Deploy a signed release to this agent</a>';

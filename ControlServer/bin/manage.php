@@ -89,7 +89,7 @@ switch ($cmd) {
             $u = getenv('DYNALLOW_ADMIN') ?: prompt('First admin username: ');
             create_user($u, 'admin');
         }
-        out('Database ready: ' . $dataDir . '/dynallow.sqlite');
+        out('Database ready: ' . db_path());
         out('Next: point Apache at public/, add the cron line (deploy/dynallow.cron), log in, set Settings → General → Public URL.');
         break;
 
@@ -155,7 +155,7 @@ switch ($cmd) {
         $nonce = substr($raw, $off, SODIUM_CRYPTO_AEAD_XCHACHA20POLY1305_IETF_NPUBBYTES);
         $ct = substr($raw, $off + SODIUM_CRYPTO_AEAD_XCHACHA20POLY1305_IETF_NPUBBYTES);
         out('Backup: ' . $header);
-        if ((is_file("$dataDir/dynallow.sqlite") || is_file("$dataDir/secret.key")) && !in_array('--force', $argv, true)) {
+        if ((is_file("$dataDir/dynallow.sqlite") || is_file("$dataDir/ipfailover.sqlite") || is_file("$dataDir/secret.key")) && !in_array('--force', $argv, true)) {
             fail('data/ already has a database or key; re-run with --force to overwrite');
         }
         $pass = getenv('DYNALLOW_PASSPHRASE') ?: prompt('Backup passphrase: ', true);
@@ -164,10 +164,11 @@ switch ($cmd) {
         if ($plain === false) fail('wrong passphrase, or the file was altered');
         $p = json_decode($plain, true);
         if (!is_dir($dataDir)) mkdir($dataDir, 0750, true);
-        foreach (['-wal', '-shm', ''] as $sfx) @unlink("$dataDir/dynallow.sqlite$sfx");
+        $restorePath = db_path(); // restore is an offline administrative operation
+        foreach (['-wal', '-shm', ''] as $sfx) @unlink($restorePath . $sfx);
         file_put_contents("$dataDir/secret.key", $p['secret_key'] . "\n");
         chmod("$dataDir/secret.key", 0600);
-        file_put_contents("$dataDir/dynallow.sqlite", base64_decode($p['db']));
+        file_put_contents($restorePath, base64_decode($p['db']));
         out('Restored. Fix ownership if needed: chown -R www-data:www-data ' . $dataDir);
         break;
 

@@ -12,21 +12,27 @@ internal static partial class Updates
     [GeneratedRegex(@"^[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}$")] private static partial Regex VersionPattern();
     public static string PublicPem()
     {
+        if (BuildInfo.DevelopmentUpdates) return "";
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("release-public.pem") ?? throw new InvalidOperationException("No offline release public key embedded; rebuild with release-public.pem");
         using var reader = new StreamReader(stream); string pem = reader.ReadToEnd();
         if (pem.Contains("PRIVATE KEY")) throw new InvalidDataException("Trust anchor must be public only");
         using var key = ECDsa.Create(); key.ImportFromPem(pem); if (key.ExportParameters(false).Curve.Oid.Value != "1.2.840.10045.3.1.7") throw new InvalidDataException("Expected P-256 release key");
         return pem;
     }
-    public static (JsonObject Manifest, byte[] Executable) Verify(string json, string pem, string target, int sequence, string version)
+    public static (JsonObject Manifest, byte[] Executable) Verify(string json, string pem, string target, int sequence, string version, bool allowDevelopment = false)
     {
         if (Encoding.UTF8.GetByteCount(json) > MaxBytes) throw new InvalidDataException("Release too large");
         var bundle = J.Obj(json); if (bundle.S("manifest").Length > 12000) throw new InvalidDataException("Manifest too large");
         var raw = Crypto.B(bundle.S("manifest")); var sig = Crypto.B(bundle.S("signature"));
-        using var key = ECDsa.Create(); key.ImportFromPem(pem);
-        if (!key.VerifyData(raw, sig, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence)) throw new CryptographicException("Offline release signature invalid");
         var m = J.Obj(Encoding.UTF8.GetString(raw));
-        if (m.S("format") != "dynallow-release-v1" || m.S("target") != target || m.N("sequence") <= sequence || m.N("sequence") > int.MaxValue
+        bool development = m.S("format") == "dynallow-dev-release-v1";
+        if (development) {
+            if (!allowDevelopment || sig.Length != 0) throw new CryptographicException("Development release not permitted");
+        } else {
+            using var key = ECDsa.Create(); key.ImportFromPem(pem);
+            if (!key.VerifyData(raw, sig, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence)) throw new CryptographicException("Offline release signature invalid");
+        }
+        if ((m.S("format") != "dynallow-release-v1" && !development) || m.S("target") != target || m.N("sequence") <= sequence || m.N("sequence") > int.MaxValue
             || !VersionPattern().IsMatch(m.S("version")) || Version.Parse(m.S("version")) <= Version.Parse(version)) throw new InvalidDataException("Release target/version/sequence rejected");
         if (m["files"] is not JsonArray files || files.Count != 1 || files[0].S("name") != "DynAllow.Agent.exe"
             || bundle["files"] is not JsonObject content || content.Count != 1 || !content.ContainsKey("DynAllow.Agent.exe")) throw new InvalidDataException("Unexpected release filenames");
@@ -47,7 +53,7 @@ internal static partial class Updates
         response.EnsureSuccessStatusCode(); var bytes = await Agent.ReadBounded(response, MaxBytes, ct);
         if (bytes.Length != offer.N("size") || Crypto.Hex(SHA256.HashData(bytes)) != hash) throw new InvalidDataException("Downloaded release hash/size mismatch");
         var watermark = store.Read("update-watermark.json");
-        var (manifest, _) = Verify(Encoding.UTF8.GetString(bytes), pem, Agent.Target, (int)Math.Max(BuildInfo.Sequence, watermark.N("sequence")), BuildInfo.Version);
+        var (manifest, _) = Verify(Encoding.UTF8.GetString(bytes), pem, Agent.Target, (int)Math.Max(BuildInfo.Sequence, watermark.N("sequence")), BuildInfo.Version, BuildInfo.DevelopmentUpdates);
         string dir = Path.Combine(Install.ProgramDir, "update"); Directory.CreateDirectory(dir);
         string bundle = Path.Combine(dir, "release.json"); Store.WritePath(bundle, Encoding.UTF8.GetString(bytes));
         string runner = Path.Combine(dir, "DynAllow.Update.exe");
@@ -65,7 +71,7 @@ internal static partial class Updates
         if (!string.Equals(Path.GetFullPath(bundlePath), expected, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Update path is not the protected staging path");
         var store = Program.DefaultStore(); var log = new AgentLog(store); var watermark = store.Read("update-watermark.json");
         if (new FileInfo(bundlePath).Length > MaxBytes) throw new InvalidDataException("Oversized update");
-        var (m, exe) = Verify(File.ReadAllText(bundlePath), PublicPem(), Agent.Target, (int)Math.Max(BuildInfo.Sequence, watermark.N("sequence")), BuildInfo.Version);
+        var (m, exe) = Verify(File.ReadAllText(bundlePath), PublicPem(), Agent.Target, (int)Math.Max(BuildInfo.Sequence, watermark.N("sequence")), BuildInfo.Version, BuildInfo.DevelopmentUpdates);
         var exePath = Path.Combine(Install.ProgramDir, "DynAllow.Agent.exe"); var backup = exePath + ".previous";
         Install.StopService(); // waits for clean stop, releases power request
         bool swapped = false;
@@ -84,8 +90,8 @@ internal static partial class Updates
             }
             if (!healthy) throw new IOException("Updated service did not initialize with expected version/sequence");
             store.Write("update-watermark.json", new JsonObject { ["sequence"] = m.N("sequence"), ["version"] = m.S("version") });
-            store.Write("update-result.json", new JsonObject { ["message"] = "Installed signed release " + m.S("version") });
-            log.Write("info", "Signed release installed: " + m.S("version"));
+            store.Write("update-result.json", new JsonObject { ["message"] = "Installed verified release " + m.S("version") });
+            log.Write("info", "Verified release installed: " + m.S("version"));
             try { File.Delete(backup); } catch (IOException) { } catch (UnauthorizedAccessException) { }
             File.Delete(bundlePath);
         } catch (Exception e) {

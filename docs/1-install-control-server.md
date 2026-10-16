@@ -52,10 +52,12 @@ machine ([docs/8](8-native-agents-and-releases.md)). Without it, Docker installe
 
    ```bash
    sudo cp -r ControlServer /var/www/dynallow
+   sudo chown -R root:www-data /var/www/dynallow
+   sudo chmod -R u=rwX,g=rX,o= /var/www/dynallow
    sudo install -d -o www-data -g www-data -m 750 /var/www/dynallow/data
    ```
 
-   The code stays owned by root: the web server can write only to `data/`.
+Keep code, config, and release trust files owned by root and read-only to the web worker. Only `data/` is writable by www-data. For development, an administrator sets `allow_dev_releases` in config; see [the dev workflow](9-development.md).
 
 3. **Create the database and your admin login.** It asks for a username and a password (12+ characters):
 
@@ -97,7 +99,8 @@ machine ([docs/8](8-native-agents-and-releases.md)). Without it, Docker installe
 8. **Make a backup now, and on a schedule:**
 
    ```bash
-   sudo -u www-data php bin/manage.php backup /root/dynallow-$(date +%F).dynbak
+   sudo install -d -o www-data -g www-data -m 700 /var/backups/dynallow
+   sudo -u www-data php bin/manage.php backup /var/backups/dynallow/dynallow-$(date +%F).dynbak
    ```
 
    It asks for a passphrase. **Keep the passphrase somewhere safe.** The backup holds

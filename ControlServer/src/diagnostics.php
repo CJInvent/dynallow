@@ -39,7 +39,7 @@ function install_diagnostic_handlers(): void
         return false;
     });
     set_exception_handler(function (Throwable $e): void {
-        if (db()->inTransaction()) db()->rollBack();
+        try { if (db()->inTransaction()) db()->rollBack(); } catch (Throwable) { /* Original failure still goes to the host log. */ }
         server_diagnostic('error', get_class($e) . ' at ' . basename($e->getFile()) . ':' . $e->getLine() . ': ' . $e->getMessage());
         if (PHP_SAPI !== 'cli') { http_response_code(500); header('Content-Type: text/plain'); }
         echo "Internal error. Check Logs in the control server and the host PHP error log.\n";
